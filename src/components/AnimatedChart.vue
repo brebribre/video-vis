@@ -240,8 +240,6 @@ function draw() {
   // Compute how many ticks actually fit given font size and chart dimensions
   const tickFontPx = Math.round(28 * sc)
   const maxYTicks = Math.max(2, Math.floor(chartH / (tickFontPx * 2.5)))
-  // X labels are 4-char years; need ~5× the font width of clearance each
-  const maxXTicks = Math.max(2, Math.floor(chartW / (tickFontPx * 5)))
 
   // Grid lines using display range
   ctx.strokeStyle = '#1e1e1e'
@@ -285,11 +283,11 @@ function draw() {
   ctx.clip()
 
   // Draw lines with Catmull-Rom spline + glow effect
-  function buildLinePath(pts: {x: number, y: number}[]) {
-    ctx.beginPath()
-    ctx.moveTo(pts[0].x, pts[0].y)
+  function buildLinePath(c: CanvasRenderingContext2D, pts: {x: number, y: number}[]) {
+    c.beginPath()
+    c.moveTo(pts[0].x, pts[0].y)
     if (pts.length === 2) {
-      ctx.lineTo(pts[1].x, pts[1].y)
+      c.lineTo(pts[1].x, pts[1].y)
     } else if (pts.length > 2) {
       const tension = 0.5
       for (let i = 0; i < pts.length - 1; i++) {
@@ -301,7 +299,7 @@ function draw() {
         const cp1y = p1.y + (p2.y - p0.y) * tension / 2
         const cp2x = p2.x - (p3.x - p1.x) * tension / 2
         const cp2y = p2.y - (p3.y - p1.y) * tension / 2
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+        c.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
       }
     }
   }
@@ -322,14 +320,14 @@ function draw() {
     ctx.shadowColor = ser.color
     ctx.shadowBlur = Math.round(24 * sc)
     ctx.globalAlpha = 0.35
-    buildLinePath(pts)
+    buildLinePath(ctx, pts)
     ctx.stroke()
 
     // Core pass — sharp, fully opaque
     ctx.globalAlpha = 1
     ctx.shadowBlur = 0
     ctx.lineWidth = Math.round(3.5 * sc)
-    buildLinePath(pts)
+    buildLinePath(ctx, pts)
     ctx.stroke()
   }
 
