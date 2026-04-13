@@ -32,8 +32,8 @@ const textScale = computed(() => {
 const PADDING = computed(() => {
   const s = textScale.value
   return isPortrait.value
-    ? { top: Math.round(130 * s), right: Math.round(80 * s), bottom: Math.round(90 * s), left: Math.round(110 * s) }
-    : { top: Math.round(80 * s),  right: Math.round(100 * s), bottom: Math.round(70 * s), left: Math.round(100 * s) }
+    ? { top: Math.round(150 * s), right: Math.round(160 * s), bottom: Math.round(110 * s), left: Math.round(130 * s) }
+    : { top: Math.round(100 * s), right: Math.round(180 * s), bottom: Math.round(90 * s),  left: Math.round(120 * s) }
 })
 const AXIS_LERP_SPEED = 0.08 // per frame, controls smoothness
 
