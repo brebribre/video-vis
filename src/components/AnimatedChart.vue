@@ -35,7 +35,7 @@ const PADDING = computed(() => {
     ? { top: Math.round(200 * s), right: Math.round(200 * s), bottom: Math.round(160 * s), left: Math.round(170 * s) }
     : { top: Math.round(140 * s), right: Math.round(220 * s), bottom: Math.round(130 * s), left: Math.round(160 * s) }
 })
-const AXIS_LERP_SPEED = 0.08 // per frame, controls smoothness
+const AXIS_LERP_SPEED = 0.03 // per frame, controls smoothness
 
 // Smoothly animated axis state
 let displayYMin = 0
