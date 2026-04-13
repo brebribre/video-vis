@@ -13,6 +13,7 @@ const config = ref<ChartConfig>({
   yLabel: '',
   animationDuration: 5,
   textSize: 1,
+  numberSuffixes: { thousands: 'K', millions: 'M', billions: 'B' },
 })
 
 const progress = ref(0)

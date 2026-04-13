@@ -93,11 +93,11 @@ function niceScale(min: number, max: number, maxTicks: number = 8): { min: numbe
   return { min: niceMin, max: niceMax, step }
 }
 
-function formatValue(v: number): string {
+function formatValue(v: number, sf = props.config.numberSuffixes): string {
   const abs = Math.abs(v)
-  if (abs >= 1e9) return (v / 1e9).toFixed(1) + 'B'
-  if (abs >= 1e6) return (v / 1e6).toFixed(1) + 'M'
-  if (abs >= 1e3) return (v / 1e3).toFixed(1) + 'K'
+  if (abs >= 1e9) return (v / 1e9).toFixed(1) + sf.billions
+  if (abs >= 1e6) return (v / 1e6).toFixed(1) + sf.millions
+  if (abs >= 1e3) return (v / 1e3).toFixed(1) + sf.thousands
   if (abs < 0.01 && abs > 0) return v.toExponential(1)
   if (Number.isInteger(v)) return v.toString()
   return v.toFixed(1)

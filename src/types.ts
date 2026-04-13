@@ -12,6 +12,19 @@ export interface Series {
 
 export type AspectRatio = '1:1' | '16:9' | '4:5' | '9:16'
 
+export interface NumberSuffixes {
+  thousands: string  // e.g. "K" or "Rb"
+  millions: string   // e.g. "M" or "Jt"
+  billions: string   // e.g. "B" or "M" (miliar)
+}
+
+export const NUMBER_SUFFIX_PRESETS: Record<string, NumberSuffixes> = {
+  'English':    { thousands: 'K',  millions: 'M',  billions: 'B'  },
+  'Indonesian': { thousands: 'Rb', millions: 'Jt', billions: 'M'  },
+  'Japanese':   { thousands: 'K',  millions: '百万', billions: '十億' },
+  'Custom':     { thousands: 'K',  millions: 'M',  billions: 'B'  },
+}
+
 export interface ChartConfig {
   series: Series[]
   aspectRatio: AspectRatio
@@ -21,6 +34,7 @@ export interface ChartConfig {
   yLabel: string
   animationDuration: number // seconds
   textSize: number // multiplier, 1 = default
+  numberSuffixes: NumberSuffixes
 }
 
 export const ASPECT_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {

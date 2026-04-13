@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { Series, AspectRatio } from '../types'
-import { DEFAULT_COLORS } from '../types'
+import { ref, computed, watch } from 'vue'
+import type { Series, AspectRatio, NumberSuffixes } from '../types'
+import { DEFAULT_COLORS, NUMBER_SUFFIX_PRESETS } from '../types'
 
 const emit = defineEmits<{
   apply: [config: {
@@ -13,6 +13,7 @@ const emit = defineEmits<{
     yLabel: string
     animationDuration: number
     textSize: number
+    numberSuffixes: NumberSuffixes
   }]
 }>()
 
@@ -23,6 +24,15 @@ const yLabel = ref('Revenue ($)')
 const aspectRatio = ref<AspectRatio>('16:9')
 const animationDuration = ref(5)
 const textSize = ref(1)
+
+const suffixPreset = ref('English')
+const suffixes = ref<NumberSuffixes>({ ...NUMBER_SUFFIX_PRESETS['English'] })
+
+watch(suffixPreset, (preset) => {
+  if (preset !== 'Custom') {
+    suffixes.value = { ...NUMBER_SUFFIX_PRESETS[preset] }
+  }
+})
 
 interface SeriesInput {
   name: string
@@ -118,6 +128,7 @@ function apply() {
     yLabel: yLabel.value,
     animationDuration: animationDuration.value,
     textSize: textSize.value,
+    numberSuffixes: { ...suffixes.value },
   })
 }
 
@@ -180,6 +191,33 @@ apply()
         step="0.1"
         class="text-size-slider"
       />
+    </div>
+
+    <div class="field">
+      <label>Number Format</label>
+      <select v-model="suffixPreset">
+        <option v-for="(_, name) in NUMBER_SUFFIX_PRESETS" :key="name" :value="name">{{ name }}</option>
+      </select>
+    </div>
+
+    <div v-if="suffixPreset === 'Custom'" class="row">
+      <div class="field">
+        <label>Thousands</label>
+        <input v-model="suffixes.thousands" placeholder="K" />
+      </div>
+      <div class="field">
+        <label>Millions</label>
+        <input v-model="suffixes.millions" placeholder="M" />
+      </div>
+      <div class="field">
+        <label>Billions</label>
+        <input v-model="suffixes.billions" placeholder="B" />
+      </div>
+    </div>
+    <div v-else class="suffix-preview">
+      1,000 = 1{{ suffixes.thousands }} &nbsp;·&nbsp;
+      1,000,000 = 1{{ suffixes.millions }} &nbsp;·&nbsp;
+      1,000,000,000 = 1{{ suffixes.billions }}
     </div>
 
     <h3>Data Series</h3>
@@ -271,6 +309,15 @@ h3 {
 .text-size-slider {
   width: 100%;
   accent-color: #4f8ff7;
+}
+
+.suffix-preview {
+  font-size: 11px;
+  color: #555;
+  background: #111;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: 'Fira Code', monospace;
 }
 
 .series-header {
