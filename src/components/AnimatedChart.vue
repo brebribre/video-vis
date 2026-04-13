@@ -263,29 +263,11 @@ function draw() {
     ctx.fillText(formatValue(v), chartLeft - Math.round(18 * sc), y)
   }
 
-  // X grid — in year mode, snap ticks to whole years only
-  let xTickValues: number[]
-  if (yearMode) {
-    const startYear = Math.ceil(displayXMin)
-    const endYear = Math.floor(displayXMax)
-    const totalYears = endYear - startYear + 1
-    const step = Math.max(1, Math.ceil(totalYears / maxXTicks))
-    xTickValues = []
-    for (let y = startYear; y <= endYear; y += step) xTickValues.push(y)
-  } else {
-    xTickValues = getDisplayTicks(displayXMin, displayXMax, maxXTicks).ticks
-  }
+  // X axis — show only the current time value, centered on the chart
+  ctx.fillStyle = '#666'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  for (const t of xTickValues) {
-    const x = mapX(t)
-    if (x < chartLeft - 1 || x > chartRight + 1) continue
-    ctx.beginPath()
-    ctx.moveTo(x, chartTop)
-    ctx.lineTo(x, chartBottom)
-    ctx.stroke()
-    ctx.fillText(formatTime(t, yearMode), x, chartBottom + Math.round(16 * sc))
-  }
+  ctx.fillText(formatTime(currentTime, yearMode), (chartLeft + chartRight) / 2, chartBottom + Math.round(16 * sc))
 
   // Axes border
   ctx.strokeStyle = '#333'
