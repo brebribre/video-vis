@@ -1,0 +1,283 @@
+<script setup lang="ts">
+import { ref, onUnmounted } from 'vue'
+import type { ChartConfig } from './types'
+import AnimatedChart from './components/AnimatedChart.vue'
+import DataInput from './components/DataInput.vue'
+import { webmToMp4 } from './transcode'
+
+const config = ref<ChartConfig>({
+  series: [],
+  aspectRatio: '16:9',
+  title: '',
+  subtitle: '',
+  xLabel: '',
+  yLabel: '',
+  animationDuration: 5,
+})
+
+const progress = ref(0)
+const playing = ref(false)
+const playbackSpeed = ref(1)
+let startTime = 0
+let startProgress = 0
+let animFrameId: number | null = null
+
+// Recording state
+const recording = ref(false)
+const converting = ref(false)
+const convertProgress = ref(0)
+const recordedChunks: Blob[] = []
+let mediaRecorder: MediaRecorder | null = null
+
+function onApply(c: ChartConfig) {
+  config.value = c
+  progress.value = 0
+  playing.value = false
+}
+
+function play() {
+  progress.value = 0
+  playing.value = true
+  startTime = performance.now()
+  startProgress = 0
+  tick()
+}
+
+function tick() {
+  const elapsed = (performance.now() - startTime) / 1000
+  const duration = config.value.animationDuration
+  progress.value = Math.min(startProgress + (elapsed * playbackSpeed.value) / duration, 1)
+
+  if (progress.value >= 1) {
+    playing.value = false
+    if (recording.value) {
+      stopRecording()
+    }
+    return
+  }
+
+  animFrameId = requestAnimationFrame(tick)
+}
+
+function onSpeedChange() {
+  if (playing.value) {
+    startProgress = progress.value
+    startTime = performance.now()
+  }
+}
+
+function stop() {
+  playing.value = false
+  if (animFrameId !== null) cancelAnimationFrame(animFrameId)
+  if (recording.value) stopRecording()
+}
+
+function reset() {
+  stop()
+  progress.value = 0
+}
+
+function onFrame(canvas: HTMLCanvasElement) {
+  // Store ref for recording setup
+  canvasEl.value = canvas
+}
+
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+
+function startRecording() {
+  const canvas = canvasEl.value
+  if (!canvas) return
+
+  const stream = canvas.captureStream(60)
+  const options: MediaRecorderOptions = { mimeType: 'video/webm;codecs=vp9' }
+
+  try {
+    mediaRecorder = new MediaRecorder(stream, options)
+  } catch {
+    // Fallback
+    mediaRecorder = new MediaRecorder(stream)
+  }
+
+  recordedChunks.length = 0
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data)
+  }
+
+  mediaRecorder.onstop = async () => {
+    recording.value = false
+    converting.value = true
+    convertProgress.value = 0
+    try {
+      const webm = new Blob(recordedChunks, { type: 'video/webm' })
+      const mp4 = await webmToMp4(webm, (p) => { convertProgress.value = p })
+      const url = URL.createObjectURL(mp4)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `chart-${Date.now()}.mp4`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      converting.value = false
+      convertProgress.value = 0
+    }
+  }
+
+  mediaRecorder.start()
+  recording.value = true
+
+  // Start playing
+  play()
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  recording.value = false
+}
+
+onUnmounted(() => {
+  if (animFrameId !== null) cancelAnimationFrame(animFrameId)
+})
+</script>
+
+<template>
+  <div class="app-layout">
+    <DataInput @apply="onApply" />
+
+    <div class="chart-area">
+      <AnimatedChart
+        :config="config"
+        :playing="playing"
+        :progress="progress"
+        @frame="onFrame"
+      />
+
+      <div class="controls">
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: (progress * 100) + '%' }" />
+        </div>
+
+        <div class="buttons">
+          <button @click="play" :disabled="playing">Play</button>
+          <button @click="stop" :disabled="!playing">Stop</button>
+          <button @click="reset">Reset</button>
+          <div class="speed-control">
+            <label>Speed</label>
+            <input
+              type="range"
+              min="0.25"
+              max="4"
+              step="0.25"
+              v-model.number="playbackSpeed"
+              @input="onSpeedChange"
+            />
+            <span class="speed-label">{{ playbackSpeed }}x</span>
+          </div>
+          <button class="primary record-btn" @click="startRecording" :disabled="recording || converting">
+            <span v-if="recording" class="rec-dot" />
+            {{ recording ? 'Recording…' : converting ? `Converting ${Math.round(convertProgress * 100)}%` : 'Export MP4' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.app-layout {
+  display: flex;
+  gap: 24px;
+  padding: 20px;
+  min-height: 100vh;
+  align-items: flex-start;
+}
+
+.chart-area {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #4f8ff7;
+  border-radius: 3px;
+  transition: width 0.05s linear;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.buttons button {
+  padding: 10px 20px;
+}
+
+.buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.speed-control label {
+  font-size: 13px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.speed-control input[type="range"] {
+  width: 100px;
+  accent-color: #4f8ff7;
+}
+
+.speed-label {
+  font-size: 13px;
+  color: #e0e0e0;
+  min-width: 32px;
+  font-variant-numeric: tabular-nums;
+}
+
+.record-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: blink 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+</style>
