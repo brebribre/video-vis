@@ -32,8 +32,8 @@ const textScale = computed(() => {
 const PADDING = computed(() => {
   const s = textScale.value
   return isPortrait.value
-    ? { top: Math.round(150 * s), right: Math.round(160 * s), bottom: Math.round(110 * s), left: Math.round(130 * s) }
-    : { top: Math.round(100 * s), right: Math.round(180 * s), bottom: Math.round(90 * s),  left: Math.round(120 * s) }
+    ? { top: Math.round(200 * s), right: Math.round(200 * s), bottom: Math.round(160 * s), left: Math.round(170 * s) }
+    : { top: Math.round(140 * s), right: Math.round(220 * s), bottom: Math.round(130 * s), left: Math.round(160 * s) }
 })
 const AXIS_LERP_SPEED = 0.08 // per frame, controls smoothness
 
@@ -383,8 +383,8 @@ function draw() {
   const titleSize = Math.round(28 * sc)
   const subtitleSize = Math.round(18 * sc)
   const axisLabelSize = Math.round(18 * sc)
-  const titleY = Math.round(18 * sc)
-  const subtitleY = titleY + titleSize + Math.round(6 * sc)
+  const titleY = Math.round(36 * sc)
+  const subtitleY = titleY + titleSize + Math.round(8 * sc)
 
   ctx.fillStyle = '#e0e0e0'
   ctx.font = `bold ${titleSize}px Inter, sans-serif`
@@ -405,11 +405,11 @@ function draw() {
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'bottom'
-  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(10 * sc))
+  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(36 * sc))
 
   // Y label
   ctx.save()
-  ctx.translate(Math.round(22 * sc), height / 2)
+  ctx.translate(Math.round(40 * sc), height / 2)
   ctx.rotate(-Math.PI / 2)
   ctx.fillStyle = '#888'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
