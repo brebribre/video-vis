@@ -181,7 +181,7 @@ function draw() {
   }
 
   const visibleData = getVisibleData(series, props.progress)
-  const s = textScale.value
+  const sc = textScale.value
   const PAD = PADDING.value
   const chartLeft = PAD.left
   const chartRight = width - PAD.right
@@ -243,7 +243,7 @@ function draw() {
 
   // Y grid
   const yTicks = getDisplayTicks(displayYMin, displayYMax, 8)
-  ctx.font = `${Math.round(18 * s)}px Inter, sans-serif`
+  ctx.font = `${Math.round(18 * sc)}px Inter, sans-serif`
   ctx.fillStyle = '#666'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
@@ -254,7 +254,7 @@ function draw() {
     ctx.moveTo(chartLeft, y)
     ctx.lineTo(chartRight, y)
     ctx.stroke()
-    ctx.fillText(formatValue(v), chartLeft - Math.round(12 * s), y)
+    ctx.fillText(formatValue(v), chartLeft - Math.round(12 * sc), y)
   }
 
   // X grid — in year mode, snap ticks to whole years only
@@ -278,7 +278,7 @@ function draw() {
     ctx.moveTo(x, chartTop)
     ctx.lineTo(x, chartBottom)
     ctx.stroke()
-    ctx.fillText(formatTime(t, yearMode), x, chartBottom + Math.round(10 * s))
+    ctx.fillText(formatTime(t, yearMode), x, chartBottom + Math.round(10 * sc))
   }
 
   // Axes border
@@ -298,14 +298,14 @@ function draw() {
 
   // Draw lines with Catmull-Rom spline for smooth curves
   for (let si = 0; si < series.length; si++) {
-    const s = series[si]
+    const ser = series[si]
     const vd = visibleData[si]
     if (vd.points.length < 1) continue
 
     const pts = vd.points.map(p => ({ x: mapX(p.time), y: mapY(p.value) }))
 
-    ctx.strokeStyle = s.color
-    ctx.lineWidth = Math.round(3.5 * s)
+    ctx.strokeStyle = ser.color
+    ctx.lineWidth = Math.round(3.5 * sc)
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
     ctx.beginPath()
@@ -338,7 +338,7 @@ function draw() {
 
   // Draw endpoints (dots/images + labels) on top, outside clip
   for (let si = 0; si < series.length; si++) {
-    const s = series[si]
+    const ser = series[si]
     const vd = visibleData[si]
     if (vd.points.length < 1) continue
 
@@ -347,9 +347,9 @@ function draw() {
     const py = mapY(last.value)
 
     // Draw image or dot at endpoint
-    const img = s.image ? getImage(s.image) : null
-    const dotR = Math.round(7 * s)
-    const iconSize = Math.round(44 * s)
+    const img = ser.image ? getImage(ser.image) : null
+    const dotR = Math.round(7 * sc)
+    const iconSize = Math.round(44 * sc)
     if (img && img.complete && img.naturalWidth > 0) {
       ctx.save()
       ctx.beginPath()
@@ -358,33 +358,33 @@ function draw() {
       ctx.clip()
       ctx.drawImage(img, px - iconSize / 2, py - iconSize / 2, iconSize, iconSize)
       ctx.restore()
-      ctx.strokeStyle = s.color
-      ctx.lineWidth = Math.round(2.5 * s)
+      ctx.strokeStyle = ser.color
+      ctx.lineWidth = Math.round(2.5 * sc)
       ctx.beginPath()
       ctx.arc(px, py, iconSize / 2, 0, Math.PI * 2)
       ctx.stroke()
     } else {
-      ctx.fillStyle = s.color
+      ctx.fillStyle = ser.color
       ctx.beginPath()
       ctx.arc(px, py, dotR, 0, Math.PI * 2)
       ctx.fill()
     }
 
     // Value label at end
-    const labelOffset = (img && img.complete && img.naturalWidth > 0) ? iconSize / 2 + Math.round(8 * s) : dotR + Math.round(8 * s)
-    ctx.fillStyle = s.color
-    ctx.font = `bold ${Math.round(20 * s)}px Inter, sans-serif`
+    const labelOffset = (img && img.complete && img.naturalWidth > 0) ? iconSize / 2 + Math.round(8 * sc) : dotR + Math.round(8 * sc)
+    ctx.fillStyle = ser.color
+    ctx.font = `bold ${Math.round(20 * sc)}px Inter, sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(formatValue(last.value), px + labelOffset, py)
   }
 
   // Title + subtitle
-  const titleSize = Math.round(28 * s)
-  const subtitleSize = Math.round(18 * s)
-  const axisLabelSize = Math.round(18 * s)
-  const titleY = Math.round(18 * s)
-  const subtitleY = titleY + titleSize + Math.round(6 * s)
+  const titleSize = Math.round(28 * sc)
+  const subtitleSize = Math.round(18 * sc)
+  const axisLabelSize = Math.round(18 * sc)
+  const titleY = Math.round(18 * sc)
+  const subtitleY = titleY + titleSize + Math.round(6 * sc)
 
   ctx.fillStyle = '#e0e0e0'
   ctx.font = `bold ${titleSize}px Inter, sans-serif`
@@ -405,11 +405,11 @@ function draw() {
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'bottom'
-  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(10 * s))
+  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(10 * sc))
 
   // Y label
   ctx.save()
-  ctx.translate(Math.round(22 * s), height / 2)
+  ctx.translate(Math.round(22 * sc), height / 2)
   ctx.rotate(-Math.PI / 2)
   ctx.fillStyle = '#888'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
@@ -419,11 +419,11 @@ function draw() {
   ctx.restore()
 
   // Legend
-  const legendFont = Math.round(18 * s)
-  const legendSwatch = Math.round(14 * s)
-  const legendGap = Math.round(24 * s)
-  const legendX = chartLeft + Math.round(12 * s)
-  let legendY = chartTop + Math.round(14 * s)
+  const legendFont = Math.round(18 * sc)
+  const legendSwatch = Math.round(14 * sc)
+  const legendGap = Math.round(24 * sc)
+  const legendX = chartLeft + Math.round(12 * sc)
+  let legendY = chartTop + Math.round(14 * sc)
   ctx.font = `${legendFont}px Inter, sans-serif`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
@@ -436,7 +436,7 @@ function draw() {
       ctx.fillRect(legendX, legendY - legendSwatch / 2, legendSwatch, legendSwatch)
     }
     ctx.fillStyle = '#ccc'
-    ctx.fillText(ser.name, legendX + legendSwatch + Math.round(8 * s), legendY)
+    ctx.fillText(ser.name, legendX + legendSwatch + Math.round(8 * sc), legendY)
     legendY += legendGap
   }
 

@@ -3,7 +3,7 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
 let ffmpeg: FFmpeg | null = null
 let loading = false
-let loadPromise: Promise<void> | null = null
+let loadPromise: Promise<unknown> | null = null
 
 const CORE_VERSION = '0.12.6'
 const BASE = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/esm`
