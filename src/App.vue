@@ -3,7 +3,6 @@ import { ref, onUnmounted } from 'vue'
 import type { ChartConfig } from './types'
 import AnimatedChart from './components/AnimatedChart.vue'
 import DataInput from './components/DataInput.vue'
-import { webmToMp4 } from './transcode'
 
 const config = ref<ChartConfig>({
   series: [],
@@ -24,8 +23,6 @@ let animFrameId: number | null = null
 
 // Recording state
 const recording = ref(false)
-const converting = ref(false)
-const convertProgress = ref(0)
 const recordedChunks: Blob[] = []
 let mediaRecorder: MediaRecorder | null = null
 
@@ -104,23 +101,15 @@ function startRecording() {
     if (e.data.size > 0) recordedChunks.push(e.data)
   }
 
-  mediaRecorder.onstop = async () => {
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `chart-${Date.now()}.webm`
+    a.click()
+    URL.revokeObjectURL(url)
     recording.value = false
-    converting.value = true
-    convertProgress.value = 0
-    try {
-      const webm = new Blob(recordedChunks, { type: 'video/webm' })
-      const mp4 = await webmToMp4(webm, (p) => { convertProgress.value = p })
-      const url = URL.createObjectURL(mp4)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `chart-${Date.now()}.mp4`
-      a.click()
-      URL.revokeObjectURL(url)
-    } finally {
-      converting.value = false
-      convertProgress.value = 0
-    }
   }
 
   mediaRecorder.start()
@@ -175,9 +164,9 @@ onUnmounted(() => {
             />
             <span class="speed-label">{{ playbackSpeed }}x</span>
           </div>
-          <button class="primary record-btn" @click="startRecording" :disabled="recording || converting">
+          <button class="primary record-btn" @click="startRecording" :disabled="recording">
             <span v-if="recording" class="rec-dot" />
-            {{ recording ? 'Recording…' : converting ? `Converting ${Math.round(convertProgress * 100)}%` : 'Export MP4' }}
+            {{ recording ? 'Recording…' : 'Export Video' }}
           </button>
         </div>
       </div>
