@@ -32,8 +32,8 @@ const textScale = computed(() => {
 const PADDING = computed(() => {
   const s = textScale.value
   return isPortrait.value
-    ? { top: Math.round(200 * s), right: Math.round(200 * s), bottom: Math.round(160 * s), left: Math.round(170 * s) }
-    : { top: Math.round(140 * s), right: Math.round(220 * s), bottom: Math.round(130 * s), left: Math.round(160 * s) }
+    ? { top: Math.round(280 * s), right: Math.round(260 * s), bottom: Math.round(220 * s), left: Math.round(230 * s) }
+    : { top: Math.round(200 * s), right: Math.round(280 * s), bottom: Math.round(180 * s), left: Math.round(220 * s) }
 })
 const AXIS_LERP_SPEED = 0.03 // per frame, controls smoothness
 
@@ -243,7 +243,7 @@ function draw() {
 
   // Y grid
   const yTicks = getDisplayTicks(displayYMin, displayYMax, 8)
-  ctx.font = `${Math.round(18 * sc)}px Inter, sans-serif`
+  ctx.font = `${Math.round(28 * sc)}px Inter, sans-serif`
   ctx.fillStyle = '#666'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
@@ -254,7 +254,7 @@ function draw() {
     ctx.moveTo(chartLeft, y)
     ctx.lineTo(chartRight, y)
     ctx.stroke()
-    ctx.fillText(formatValue(v), chartLeft - Math.round(12 * sc), y)
+    ctx.fillText(formatValue(v), chartLeft - Math.round(18 * sc), y)
   }
 
   // X grid — in year mode, snap ticks to whole years only
@@ -278,7 +278,7 @@ function draw() {
     ctx.moveTo(x, chartTop)
     ctx.lineTo(x, chartBottom)
     ctx.stroke()
-    ctx.fillText(formatTime(t, yearMode), x, chartBottom + Math.round(10 * sc))
+    ctx.fillText(formatTime(t, yearMode), x, chartBottom + Math.round(16 * sc))
   }
 
   // Axes border
@@ -373,16 +373,16 @@ function draw() {
     // Value label at end
     const labelOffset = (img && img.complete && img.naturalWidth > 0) ? iconSize / 2 + Math.round(8 * sc) : dotR + Math.round(8 * sc)
     ctx.fillStyle = ser.color
-    ctx.font = `bold ${Math.round(20 * sc)}px Inter, sans-serif`
+    ctx.font = `bold ${Math.round(30 * sc)}px Inter, sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(formatValue(last.value), px + labelOffset, py)
   }
 
   // Title + subtitle
-  const titleSize = Math.round(28 * sc)
-  const subtitleSize = Math.round(18 * sc)
-  const axisLabelSize = Math.round(18 * sc)
+  const titleSize = Math.round(40 * sc)
+  const subtitleSize = Math.round(27 * sc)
+  const axisLabelSize = Math.round(28 * sc)
   const titleY = Math.round(36 * sc)
   const subtitleY = titleY + titleSize + Math.round(8 * sc)
 
@@ -405,11 +405,11 @@ function draw() {
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'bottom'
-  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(36 * sc))
+  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(52 * sc))
 
   // Y label
   ctx.save()
-  ctx.translate(Math.round(40 * sc), height / 2)
+  ctx.translate(Math.round(56 * sc), height / 2)
   ctx.rotate(-Math.PI / 2)
   ctx.fillStyle = '#888'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
@@ -419,11 +419,11 @@ function draw() {
   ctx.restore()
 
   // Legend
-  const legendFont = Math.round(18 * sc)
-  const legendSwatch = Math.round(14 * sc)
-  const legendGap = Math.round(24 * sc)
-  const legendX = chartLeft + Math.round(12 * sc)
-  let legendY = chartTop + Math.round(14 * sc)
+  const legendFont = Math.round(28 * sc)
+  const legendSwatch = Math.round(22 * sc)
+  const legendGap = Math.round(38 * sc)
+  const legendX = chartLeft + Math.round(16 * sc)
+  let legendY = chartTop + Math.round(20 * sc)
   ctx.font = `${legendFont}px Inter, sans-serif`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
