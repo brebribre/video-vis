@@ -284,27 +284,13 @@ function draw() {
   ctx.rect(chartLeft, chartTop, chartW, chartH)
   ctx.clip()
 
-  // Draw lines with Catmull-Rom spline for smooth curves
-  for (let si = 0; si < series.length; si++) {
-    const ser = series[si]
-    const vd = visibleData[si]
-    if (vd.points.length < 1) continue
-
-    const pts = vd.points.map(p => ({ x: mapX(p.time), y: mapY(p.value) }))
-
-    ctx.strokeStyle = ser.color
-    ctx.lineWidth = Math.round(3.5 * sc)
-    ctx.lineJoin = 'round'
-    ctx.lineCap = 'round'
+  // Draw lines with Catmull-Rom spline + glow effect
+  function buildLinePath(pts: {x: number, y: number}[]) {
     ctx.beginPath()
     ctx.moveTo(pts[0].x, pts[0].y)
-
-    if (pts.length === 1) {
-      // single point — nothing more to draw
-    } else if (pts.length === 2) {
+    if (pts.length === 2) {
       ctx.lineTo(pts[1].x, pts[1].y)
-    } else {
-      // Catmull-Rom → cubic bezier, tension 0.5
+    } else if (pts.length > 2) {
       const tension = 0.5
       for (let i = 0; i < pts.length - 1; i++) {
         const p0 = pts[Math.max(i - 1, 0)]
@@ -318,9 +304,37 @@ function draw() {
         ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
       }
     }
+  }
 
+  for (let si = 0; si < series.length; si++) {
+    const ser = series[si]
+    const vd = visibleData[si]
+    if (vd.points.length < 1) continue
+
+    const pts = vd.points.map(p => ({ x: mapX(p.time), y: mapY(p.value) }))
+
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+
+    // Glow pass — wide, blurred, semi-transparent
+    ctx.strokeStyle = ser.color
+    ctx.lineWidth = Math.round(14 * sc)
+    ctx.shadowColor = ser.color
+    ctx.shadowBlur = Math.round(24 * sc)
+    ctx.globalAlpha = 0.35
+    buildLinePath(pts)
+    ctx.stroke()
+
+    // Core pass — sharp, fully opaque
+    ctx.globalAlpha = 1
+    ctx.shadowBlur = 0
+    ctx.lineWidth = Math.round(3.5 * sc)
+    buildLinePath(pts)
     ctx.stroke()
   }
+
+  ctx.shadowBlur = 0
+  ctx.globalAlpha = 1
 
   ctx.restore() // un-clip
 
