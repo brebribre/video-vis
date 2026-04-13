@@ -12,6 +12,7 @@ const emit = defineEmits<{
     xLabel: string
     yLabel: string
     animationDuration: number
+    textSize: number
   }]
 }>()
 
@@ -21,6 +22,7 @@ const xLabel = ref('Year')
 const yLabel = ref('Revenue ($)')
 const aspectRatio = ref<AspectRatio>('16:9')
 const animationDuration = ref(5)
+const textSize = ref(1)
 
 interface SeriesInput {
   name: string
@@ -115,6 +117,7 @@ function apply() {
     xLabel: xLabel.value,
     yLabel: yLabel.value,
     animationDuration: animationDuration.value,
+    textSize: textSize.value,
   })
 }
 
@@ -141,6 +144,10 @@ apply()
         <label>X Axis Label</label>
         <input v-model="xLabel" placeholder="X axis" />
       </div>
+    
+    </div>
+    <div class="row">
+     
       <div class="field">
         <label>Y Axis Label</label>
         <input v-model="yLabel" placeholder="Y axis" />
@@ -161,6 +168,18 @@ apply()
         <label>Duration (seconds)</label>
         <input type="number" v-model.number="animationDuration" min="1" max="30" />
       </div>
+    </div>
+
+    <div class="field">
+      <label>Text Size &mdash; {{ textSize.toFixed(1) }}×</label>
+      <input
+        type="range"
+        v-model.number="textSize"
+        min="0.5"
+        max="2"
+        step="0.1"
+        class="text-size-slider"
+      />
     </div>
 
     <h3>Data Series</h3>
@@ -247,6 +266,11 @@ h3 {
   background: #1a1a1a;
   border-radius: 6px;
   border: 1px solid #2a2a2a;
+}
+
+.text-size-slider {
+  width: 100%;
+  accent-color: #4f8ff7;
 }
 
 .series-header {

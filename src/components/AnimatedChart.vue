@@ -22,10 +22,10 @@ const isPortrait = computed(() => {
   return r === '4:5' || r === '9:16'
 })
 
-// Scale factor relative to a 1280×720 baseline — makes text legible on phone
+// Scale factor relative to a 1280×720 baseline, multiplied by user-controlled size
 const textScale = computed(() => {
   const { width, height } = dims.value
-  return Math.sqrt(width * height) / 960
+  return (Math.sqrt(width * height) / 960) * (props.config.textSize ?? 1)
 })
 
 // Portrait formats get extra vertical padding for title/subtitle

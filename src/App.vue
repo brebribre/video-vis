@@ -12,6 +12,7 @@ const config = ref<ChartConfig>({
   xLabel: '',
   yLabel: '',
   animationDuration: 5,
+  textSize: 1,
 })
 
 const progress = ref(0)

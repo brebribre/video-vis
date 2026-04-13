@@ -20,6 +20,7 @@ export interface ChartConfig {
   xLabel: string
   yLabel: string
   animationDuration: number // seconds
+  textSize: number // multiplier, 1 = default
 }
 
 export const ASPECT_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {
