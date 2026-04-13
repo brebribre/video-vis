@@ -237,13 +237,19 @@ function draw() {
     return chartBottom - ((value - displayYMin) / (displayYMax - displayYMin)) * chartH
   }
 
+  // Compute how many ticks actually fit given font size and chart dimensions
+  const tickFontPx = Math.round(28 * sc)
+  const maxYTicks = Math.max(2, Math.floor(chartH / (tickFontPx * 2.5)))
+  // X labels are 4-char years; need ~5× the font width of clearance each
+  const maxXTicks = Math.max(2, Math.floor(chartW / (tickFontPx * 5)))
+
   // Grid lines using display range
   ctx.strokeStyle = '#1e1e1e'
   ctx.lineWidth = 1
 
   // Y grid
-  const yTicks = getDisplayTicks(displayYMin, displayYMax, 8)
-  ctx.font = `${Math.round(28 * sc)}px Inter, sans-serif`
+  const yTicks = getDisplayTicks(displayYMin, displayYMax, maxYTicks)
+  ctx.font = `${tickFontPx}px Inter, sans-serif`
   ctx.fillStyle = '#666'
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
@@ -263,11 +269,11 @@ function draw() {
     const startYear = Math.ceil(displayXMin)
     const endYear = Math.floor(displayXMax)
     const totalYears = endYear - startYear + 1
-    const step = Math.max(1, Math.ceil(totalYears / 8))
+    const step = Math.max(1, Math.ceil(totalYears / maxXTicks))
     xTickValues = []
     for (let y = startYear; y <= endYear; y += step) xTickValues.push(y)
   } else {
-    xTickValues = getDisplayTicks(displayXMin, displayXMax, 8).ticks
+    xTickValues = getDisplayTicks(displayXMin, displayXMax, maxXTicks).ticks
   }
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
