@@ -484,6 +484,8 @@ onUnmounted(() => {
     :height="dims.height"
     :style="{
       maxWidth: '100%',
+      maxHeight: 'calc(100vh - 160px)',
+      width: 'auto',
       height: 'auto',
       aspectRatio: dims.width + '/' + dims.height,
       borderRadius: '8px',
