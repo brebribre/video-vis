@@ -186,6 +186,7 @@ onUnmounted(() => {
 .chart-area {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 16px;
   flex: 1;
 }
@@ -194,6 +195,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
 }
 
 .progress-bar {
