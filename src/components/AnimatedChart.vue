@@ -263,11 +263,11 @@ function draw() {
     ctx.fillText(formatValue(v), chartLeft - Math.round(18 * sc), y)
   }
 
-  // X axis — show only the current time value, centered on the chart
-  ctx.fillStyle = '#666'
+  // X axis — single label at the right edge, aligned with line heads
+  ctx.fillStyle = '#aaa'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillText(formatTime(currentTime, yearMode), (chartLeft + chartRight) / 2, chartBottom + Math.round(16 * sc))
+  ctx.fillText(formatTime(currentTime, yearMode), chartRight, chartBottom + Math.round(16 * sc))
 
   // Axes border
   ctx.strokeStyle = '#333'
