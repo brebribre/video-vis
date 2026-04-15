@@ -24,6 +24,8 @@ const config = ref<ChartConfig>({
 const progress = ref(0)
 const playing = ref(false)
 const playbackSpeed = ref(1)
+type ExportFormat = 'webm' | 'hevc-mp4'
+const exportFormat = ref<ExportFormat>('webm')
 let startTime = 0
 let startProgress = 0
 let animFrameId: number | null = null
@@ -33,6 +35,8 @@ let recordingStopTimeoutId: number | null = null
 const recording = ref(false)
 const recordedChunks: Blob[] = []
 let mediaRecorder: MediaRecorder | null = null
+let recordingBlobType = 'video/webm'
+let recordingFileExtension = 'webm'
 
 function onApply(c: ChartConfig) {
   config.value = c
@@ -100,18 +104,51 @@ function onFrame(canvas: HTMLCanvasElement) {
 
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 
+function pickSupportedMimeType(candidates: string[]): string | null {
+  for (const mimeType of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mimeType)) {
+      return mimeType
+    }
+  }
+  return null
+}
+
+function getRecordingConfig() {
+  if (exportFormat.value === 'hevc-mp4') {
+    const hevcCandidates = ['video/mp4;codecs=hvc1', 'video/mp4;codecs=hev1', 'video/mp4']
+    const supportedHevc = pickSupportedMimeType(hevcCandidates)
+    if (supportedHevc) {
+      return { mimeType: supportedHevc, blobType: 'video/mp4', extension: 'mp4' }
+    }
+  }
+
+  const webmCandidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+  const supportedWebm = pickSupportedMimeType(webmCandidates)
+  if (supportedWebm) {
+    return { mimeType: supportedWebm, blobType: 'video/webm', extension: 'webm' }
+  }
+
+  return { mimeType: '', blobType: 'video/webm', extension: 'webm' }
+}
+
 function startRecording() {
   const canvas = canvasEl.value
   if (!canvas) return
 
   const stream = canvas.captureStream(60)
-  const options: MediaRecorderOptions = { mimeType: 'video/webm;codecs=vp9' }
+  const recordingConfig = getRecordingConfig()
+  recordingBlobType = recordingConfig.blobType
+  recordingFileExtension = recordingConfig.extension
 
   try {
-    mediaRecorder = new MediaRecorder(stream, options)
+    mediaRecorder = recordingConfig.mimeType
+      ? new MediaRecorder(stream, { mimeType: recordingConfig.mimeType })
+      : new MediaRecorder(stream)
   } catch {
     // Fallback
     mediaRecorder = new MediaRecorder(stream)
+    recordingBlobType = 'video/webm'
+    recordingFileExtension = 'webm'
   }
 
   recordedChunks.length = 0
@@ -121,11 +158,11 @@ function startRecording() {
   }
 
   mediaRecorder.onstop = () => {
-    const blob = new Blob(recordedChunks, { type: 'video/webm' })
+    const blob = new Blob(recordedChunks, { type: recordingBlobType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `chart-${Date.now()}.webm`
+    a.download = `chart-${Date.now()}.${recordingFileExtension}`
     a.click()
     URL.revokeObjectURL(url)
     recording.value = false
@@ -183,6 +220,13 @@ onUnmounted(() => {
               @input="onSpeedChange"
             />
             <span class="speed-label">{{ playbackSpeed }}x</span>
+          </div>
+          <div class="export-format-control">
+            <label>Export</label>
+            <select v-model="exportFormat">
+              <option value="webm">WebM</option>
+              <option value="hevc-mp4">HEVC MP4</option>
+            </select>
           </div>
           <button class="primary record-btn" @click="startRecording" :disabled="recording">
             <span v-if="recording" class="rec-dot" />
@@ -269,6 +313,23 @@ onUnmounted(() => {
   color: #e0e0e0;
   min-width: 32px;
   font-variant-numeric: tabular-nums;
+}
+
+.export-format-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.export-format-control label {
+  font-size: 13px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.export-format-control select {
+  min-width: 120px;
 }
 
 .record-btn {

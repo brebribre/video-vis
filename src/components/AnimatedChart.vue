@@ -40,14 +40,14 @@ const PADDING = computed(() => {
     const extraVerticalPad = Math.max(0, Math.round((height - targetPortraitHeight) / 2))
     return {
       top: Math.round(280 * s) + extraVerticalPad,
-      right: Math.round(260 * s),
+      right: Math.round(220 * s),
       bottom: Math.round(220 * s) + extraVerticalPad,
-      left: Math.round(230 * s),
+      left: Math.round(180 * s),
     }
   }
   return isPortrait.value
-    ? { top: Math.round(280 * s), right: Math.round(260 * s), bottom: Math.round(220 * s), left: Math.round(230 * s) }
-    : { top: Math.round(200 * s), right: Math.round(280 * s), bottom: Math.round(180 * s), left: Math.round(220 * s) }
+    ? { top: Math.round(280 * s), right: Math.round(220 * s), bottom: Math.round(220 * s), left: Math.round(180 * s) }
+    : { top: Math.round(200 * s), right: Math.round(230 * s), bottom: Math.round(180 * s), left: Math.round(180 * s) }
 })
 const AXIS_LERP_SPEED = 0.03 // per frame, controls smoothness
 const LEGEND_LERP_SPEED = 0.2
@@ -544,8 +544,9 @@ function draw() {
   const titleSize = Math.round(42 * sc * titleScale)
   const subtitleSize = Math.round(24 * sc * subtitleScale)
   const axisLabelSize = Math.round(28 * sc)
-  const titleY = Math.round(36 * sc)
-  const subtitleY = titleY + titleSize + Math.round(14 * sc)
+  const subtitleTopGap = Math.round(44 * sc)
+  const subtitleY = chartTop - subtitleSize - subtitleTopGap
+  const titleY = subtitleY - titleSize - Math.round(8 * sc)
 
   ctx.fillStyle = '#e0e0e0'
   ctx.font = titleBoldFont(titleSize)
@@ -565,8 +566,8 @@ function draw() {
   ctx.fillStyle = '#e0e0e0'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
-  ctx.textBaseline = 'bottom'
-  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(52 * sc))
+  ctx.textBaseline = 'top'
+  ctx.fillText(props.config.xLabel, width / 2, chartBottom + Math.round(34 * sc))
 
   // Y label
   ctx.save()
