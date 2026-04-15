@@ -159,14 +159,16 @@ function niceScale(min: number, max: number, maxTicks: number = 8): { min: numbe
 }
 
 function formatValue(v: number, sf = props.config.numberSuffixes): string {
-  const prefix = props.config.currency ?? ''
+  const cur = props.config.currency ?? ''
+  const isPrefix = props.config.currencyPosition !== 'suffix'
+  const wrap = (num: string) => isPrefix ? cur + num : num + cur
   const abs = Math.abs(v)
-  if (abs >= 1e9) return prefix + (v / 1e9).toFixed(1) + sf.billions
-  if (abs >= 1e6) return prefix + (v / 1e6).toFixed(1) + sf.millions
-  if (abs >= 1e3) return prefix + (v / 1e3).toFixed(1) + sf.thousands
-  if (abs < 0.01 && abs > 0) return prefix + v.toExponential(1)
-  if (Number.isInteger(v)) return prefix + v.toString()
-  return prefix + v.toFixed(1)
+  if (abs >= 1e9) return wrap((v / 1e9).toFixed(1) + sf.billions)
+  if (abs >= 1e6) return wrap((v / 1e6).toFixed(1) + sf.millions)
+  if (abs >= 1e3) return wrap((v / 1e3).toFixed(1) + sf.thousands)
+  if (abs < 0.01 && abs > 0) return wrap(v.toExponential(1))
+  if (Number.isInteger(v)) return wrap(v.toString())
+  return wrap(v.toFixed(1))
 }
 
 function formatDDMMYY(ms: number): string {
@@ -368,21 +370,35 @@ function draw() {
   const yMinRaw = Math.min(...allVisibleValues, 0)
   const yMaxRaw = Math.max(...allVisibleValues)
 
-  const targetYScale = niceScale(yMinRaw, yMaxRaw, 8)
+  // Add extra headroom above the max so the chart has generous breathing room
+  const yRange = yMaxRaw - yMinRaw || Math.abs(yMaxRaw) * 0.1 || 1
+  const headroom = yRange * 0.5 // 50% of visible range as top padding
+  const targetYScale = niceScale(yMinRaw, yMaxRaw + headroom, 8)
 
   // X axis: use raw current time as max so the line head is always pinned to the right edge
   // The min is fixed to the global start. No rounding/nice-scaling on xMax.
   displayXMin = globalMinTime
   displayXMax = currentTime
 
-  // Y axis: smooth lerp for nice transitions when scale jumps
+  // Y axis: smooth lerp, but snap aggressively when falling behind.
+  // If data outpaces the display range, the axis must catch up immediately
+  // so lines never sit clamped at the top/bottom.
   if (!axisInitialized) {
     displayYMin = targetYScale.min
     displayYMax = targetYScale.max
     axisInitialized = true
   } else {
-    displayYMin = lerp(displayYMin, targetYScale.min, AXIS_LERP_SPEED)
-    displayYMax = lerp(displayYMax, targetYScale.max, AXIS_LERP_SPEED)
+    // Always expand instantly (never let the line clip), shrink smoothly
+    if (targetYScale.max > displayYMax) {
+      displayYMax = targetYScale.max
+    } else {
+      displayYMax = lerp(displayYMax, targetYScale.max, AXIS_LERP_SPEED)
+    }
+    if (targetYScale.min < displayYMin) {
+      displayYMin = targetYScale.min
+    } else {
+      displayYMin = lerp(displayYMin, targetYScale.min, AXIS_LERP_SPEED)
+    }
   }
 
   function mapX(time: number): number {
@@ -392,7 +408,10 @@ function draw() {
 
   function mapY(value: number): number {
     if (displayYMax === displayYMin) return chartTop + chartH / 2
-    return chartBottom - ((value - displayYMin) / (displayYMax - displayYMin)) * chartH
+    const raw = chartBottom - ((value - displayYMin) / (displayYMax - displayYMin)) * chartH
+    // Clamp to chart area so lines/endpoints never exceed the container
+    // when data grows faster than the animated Y-axis can follow
+    return Math.max(chartTop, Math.min(chartBottom, raw))
   }
 
   // Compute how many ticks actually fit given font size and chart dimensions
