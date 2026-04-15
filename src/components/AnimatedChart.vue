@@ -383,25 +383,16 @@ function draw() {
   displayXMin = globalMinTime
   displayXMax = currentTime
 
-  // Y axis: smooth lerp, but snap aggressively when falling behind.
-  // If data outpaces the display range, the axis must catch up immediately
-  // so lines never sit clamped at the top/bottom.
+  // Y axis: smooth lerp for nice transitions when scale jumps.
+  // The mapY clamp below prevents lines from escaping the chart area
+  // while the axis catches up.
   if (!axisInitialized) {
     displayYMin = targetYScale.min
     displayYMax = targetYScale.max
     axisInitialized = true
   } else {
-    // Always expand instantly (never let the line clip), shrink smoothly
-    if (targetYScale.max > displayYMax) {
-      displayYMax = targetYScale.max
-    } else {
-      displayYMax = lerp(displayYMax, targetYScale.max, AXIS_LERP_SPEED)
-    }
-    if (targetYScale.min < displayYMin) {
-      displayYMin = targetYScale.min
-    } else {
-      displayYMin = lerp(displayYMin, targetYScale.min, AXIS_LERP_SPEED)
-    }
+    displayYMin = lerp(displayYMin, targetYScale.min, AXIS_LERP_SPEED)
+    displayYMax = lerp(displayYMax, targetYScale.max, AXIS_LERP_SPEED)
   }
 
   function mapX(time: number): number {
