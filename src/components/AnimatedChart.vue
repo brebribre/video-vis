@@ -31,6 +31,20 @@ const textScale = computed(() => {
 // Portrait formats get extra vertical padding for title/subtitle
 const PADDING = computed(() => {
   const s = textScale.value
+  const r = props.config.aspectRatio
+  // For 9:16 reels, keep a 4:5 composition centered vertically, then pad top/bottom.
+  // This preserves portrait positioning while fitting reel output dimensions.
+  if (r === '9:16') {
+    const { width, height } = dims.value
+    const targetPortraitHeight = width * (5 / 4) // 4:5 frame height for this width
+    const extraVerticalPad = Math.max(0, Math.round((height - targetPortraitHeight) / 2))
+    return {
+      top: Math.round(280 * s) + extraVerticalPad,
+      right: Math.round(260 * s),
+      bottom: Math.round(220 * s) + extraVerticalPad,
+      left: Math.round(230 * s),
+    }
+  }
   return isPortrait.value
     ? { top: Math.round(280 * s), right: Math.round(260 * s), bottom: Math.round(220 * s), left: Math.round(230 * s) }
     : { top: Math.round(200 * s), right: Math.round(280 * s), bottom: Math.round(180 * s), left: Math.round(220 * s) }
