@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { Series, AspectRatio, NumberSuffixes, XAxisMode, IconSize, ChartFont } from '../types'
+import type { Series, AspectRatio, NumberSuffixes, XAxisMode, IconSize, ChartFont, CurrencyPosition } from '../types'
 import { DEFAULT_COLORS, NUMBER_SUFFIX_PRESETS } from '../types'
 
 const emit = defineEmits<{
@@ -13,6 +13,8 @@ const emit = defineEmits<{
     xLabel: string
     yLabel: string
     currency: string
+    currencyPosition: CurrencyPosition
+    allowNegative: boolean
     iconSize: IconSize
     chartFont: ChartFont
     showEndRanking: boolean
@@ -28,7 +30,8 @@ const xLabel = ref('Year')
 const yLabel = ref('Revenue ($)')
 const xAxisMode = ref<XAxisMode>('text')
 const currency = ref('$')
-const currencyPosition = ref<import('../types').CurrencyPosition>('prefix')
+const currencyPosition = ref<CurrencyPosition>('prefix')
+const allowNegative = ref(false)
 const iconSize = ref<IconSize>('medium')
 const chartFont = ref<ChartFont>('modern')
 const showEndRanking = ref(true)
@@ -254,6 +257,7 @@ function apply() {
     yLabel: yLabel.value,
     currency: currency.value,
     currencyPosition: currencyPosition.value,
+    allowNegative: allowNegative.value,
     iconSize: iconSize.value,
     chartFont: chartFont.value,
     showEndRanking: showEndRanking.value,
@@ -272,6 +276,7 @@ watch(
     xAxisMode,
     currency,
     currencyPosition,
+    allowNegative,
     iconSize,
     chartFont,
     showEndRanking,
@@ -326,11 +331,11 @@ apply()
         <input v-model="yLabel" placeholder="Y axis" />
       </div>
       <div class="field">
-        <label>Currency</label>
+        <label>Currency Symbol</label>
         <input v-model="currency" placeholder="$" />
       </div>
       <div class="field">
-        <label>Currency Position</label>
+        <label>Symbol Position</label>
         <select v-model="currencyPosition">
           <option value="prefix">Prefix ($100)</option>
           <option value="suffix">Suffix (100$)</option>
@@ -392,6 +397,13 @@ apply()
       <label>
         <input type="checkbox" v-model="showEndRanking" />
         Show end ranking animation
+      </label>
+    </div>
+
+    <div class="field checkbox-field">
+      <label>
+        <input type="checkbox" v-model="allowNegative" />
+        Allow negative values
       </label>
     </div>
 

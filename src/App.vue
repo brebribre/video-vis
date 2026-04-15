@@ -14,6 +14,7 @@ const config = ref<ChartConfig>({
   yLabel: '',
   currency: '$',
   currencyPosition: 'prefix',
+  allowNegative: false,
   iconSize: 'medium',
   chartFont: 'modern',
   showEndRanking: true,

@@ -40,6 +40,7 @@ export interface ChartConfig {
   yLabel: string
   currency: string
   currencyPosition: CurrencyPosition
+  allowNegative: boolean
   iconSize: IconSize
   chartFont: ChartFont
   showEndRanking: boolean
