@@ -159,14 +159,17 @@ function niceScale(min: number, max: number, maxTicks: number = 8): { min: numbe
 }
 
 function formatValue(v: number, sf = props.config.numberSuffixes): string {
-  const prefix = props.config.currency ?? ''
+  const symbol = props.config.currency ?? ''
+  const isPrefix = (props.config.currencyPosition ?? 'prefix') === 'prefix'
   const abs = Math.abs(v)
-  if (abs >= 1e9) return prefix + (v / 1e9).toFixed(1) + sf.billions
-  if (abs >= 1e6) return prefix + (v / 1e6).toFixed(1) + sf.millions
-  if (abs >= 1e3) return prefix + (v / 1e3).toFixed(1) + sf.thousands
-  if (abs < 0.01 && abs > 0) return prefix + v.toExponential(1)
-  if (Number.isInteger(v)) return prefix + v.toString()
-  return prefix + v.toFixed(1)
+  let raw: string
+  if (abs >= 1e9) raw = (v / 1e9).toFixed(1) + sf.billions
+  else if (abs >= 1e6) raw = (v / 1e6).toFixed(1) + sf.millions
+  else if (abs >= 1e3) raw = (v / 1e3).toFixed(1) + sf.thousands
+  else if (abs < 0.01 && abs > 0) raw = v.toExponential(1)
+  else if (Number.isInteger(v)) raw = v.toString()
+  else raw = v.toFixed(1)
+  return isPrefix ? symbol + raw : raw + symbol
 }
 
 function formatDDMMYY(ms: number): string {
@@ -365,7 +368,9 @@ function draw() {
   const globalMinTime = Math.min(...allTimes)
 
   const currentTime = Math.max(...allVisibleTimes)
-  const yMinRaw = Math.min(...allVisibleValues, 0)
+  const yMinRaw = props.config.allowNegative
+    ? Math.min(...allVisibleValues)
+    : Math.min(...allVisibleValues, 0)
   const yMaxRaw = Math.max(...allVisibleValues)
 
   const targetYScale = niceScale(yMinRaw, yMaxRaw, 8)
@@ -417,6 +422,21 @@ function draw() {
     ctx.lineTo(chartRight, y)
     ctx.stroke()
     ctx.fillText(formatValue(v), chartLeft - Math.round(18 * sc), y)
+  }
+
+  // Zero line when chart spans negative values
+  if (props.config.allowNegative && displayYMin < 0 && displayYMax > 0) {
+    const zeroY = mapY(0)
+    if (zeroY >= chartTop && zeroY <= chartBottom) {
+      ctx.strokeStyle = '#444'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([6, 4])
+      ctx.beginPath()
+      ctx.moveTo(chartLeft, zeroY)
+      ctx.lineTo(chartRight, zeroY)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
   }
 
   // X axis — single label at the right edge, aligned with line heads

@@ -13,6 +13,8 @@ const config = ref<ChartConfig>({
   xLabel: '',
   yLabel: '',
   currency: '$',
+  currencyPosition: 'prefix',
+  allowNegative: false,
   iconSize: 'medium',
   chartFont: 'modern',
   showEndRanking: true,

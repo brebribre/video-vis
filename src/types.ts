@@ -15,6 +15,7 @@ export type AspectRatio = '1:1' | '16:9' | '4:5' | '9:16'
 export type XAxisMode = 'text' | 'date-ddmmyy' | 'date-mmyy' | 'year'
 export type IconSize = 'small' | 'medium' | 'large'
 export type ChartFont = 'modern' | 'royal'
+export type CurrencyPosition = 'prefix' | 'suffix'
 
 export interface NumberSuffixes {
   thousands: string  // e.g. "K" or "Rb"
@@ -38,6 +39,8 @@ export interface ChartConfig {
   xLabel: string
   yLabel: string
   currency: string
+  currencyPosition: CurrencyPosition
+  allowNegative: boolean
   iconSize: IconSize
   chartFont: ChartFont
   showEndRanking: boolean
