@@ -28,6 +28,7 @@ const xLabel = ref('Year')
 const yLabel = ref('Revenue ($)')
 const xAxisMode = ref<XAxisMode>('text')
 const currency = ref('$')
+const currencyPosition = ref<import('../types').CurrencyPosition>('prefix')
 const iconSize = ref<IconSize>('medium')
 const chartFont = ref<ChartFont>('modern')
 const showEndRanking = ref(true)
@@ -252,6 +253,7 @@ function apply() {
     xLabel: xLabel.value,
     yLabel: yLabel.value,
     currency: currency.value,
+    currencyPosition: currencyPosition.value,
     iconSize: iconSize.value,
     chartFont: chartFont.value,
     showEndRanking: showEndRanking.value,
@@ -269,6 +271,7 @@ watch(
     yLabel,
     xAxisMode,
     currency,
+    currencyPosition,
     iconSize,
     chartFont,
     showEndRanking,
@@ -323,8 +326,15 @@ apply()
         <input v-model="yLabel" placeholder="Y axis" />
       </div>
       <div class="field">
-        <label>Currency Prefix</label>
+        <label>Currency</label>
         <input v-model="currency" placeholder="$" />
+      </div>
+      <div class="field">
+        <label>Currency Position</label>
+        <select v-model="currencyPosition">
+          <option value="prefix">Prefix ($100)</option>
+          <option value="suffix">Suffix (100$)</option>
+        </select>
       </div>
       <div class="field">
         <label>Icon Size</label>
