@@ -7,10 +7,15 @@ import DataInput from './components/DataInput.vue'
 const config = ref<ChartConfig>({
   series: [],
   aspectRatio: '16:9',
+  xAxisMode: 'text',
   title: '',
   subtitle: '',
   xLabel: '',
   yLabel: '',
+  currency: '$',
+  iconSize: 'medium',
+  chartFont: 'modern',
+  showEndRanking: true,
   animationDuration: 5,
   textSize: 1,
   numberSuffixes: { thousands: 'K', millions: 'M', billions: 'B' },
@@ -22,6 +27,7 @@ const playbackSpeed = ref(1)
 let startTime = 0
 let startProgress = 0
 let animFrameId: number | null = null
+let recordingStopTimeoutId: number | null = null
 
 // Recording state
 const recording = ref(false)
@@ -50,7 +56,14 @@ function tick() {
   if (progress.value >= 1) {
     playing.value = false
     if (recording.value) {
-      stopRecording()
+      // Keep recording a little longer so end-state animation is captured.
+      if (recordingStopTimeoutId !== null) {
+        clearTimeout(recordingStopTimeoutId)
+      }
+      recordingStopTimeoutId = window.setTimeout(() => {
+        stopRecording()
+        recordingStopTimeoutId = null
+      }, 3000)
     }
     return
   }
@@ -68,6 +81,10 @@ function onSpeedChange() {
 function stop() {
   playing.value = false
   if (animFrameId !== null) cancelAnimationFrame(animFrameId)
+  if (recordingStopTimeoutId !== null) {
+    clearTimeout(recordingStopTimeoutId)
+    recordingStopTimeoutId = null
+  }
   if (recording.value) stopRecording()
 }
 
@@ -130,6 +147,7 @@ function stopRecording() {
 
 onUnmounted(() => {
   if (animFrameId !== null) cancelAnimationFrame(animFrameId)
+  if (recordingStopTimeoutId !== null) clearTimeout(recordingStopTimeoutId)
 })
 </script>
 

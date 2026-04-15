@@ -36,6 +36,14 @@ const PADDING = computed(() => {
     : { top: Math.round(200 * s), right: Math.round(280 * s), bottom: Math.round(180 * s), left: Math.round(220 * s) }
 })
 const AXIS_LERP_SPEED = 0.03 // per frame, controls smoothness
+const LEGEND_LERP_SPEED = 0.2
+const CONFETTI_DURATION_MS = 1800
+const CONFETTI_COUNT = 90
+const ICON_SIZE_SCALE = {
+  small: 0.75,
+  medium: 1,
+  large: 1.35,
+} as const
 
 // Smoothly animated axis state
 let displayYMin = 0
@@ -46,6 +54,49 @@ let axisInitialized = false
 
 // Image cache: maps data URL -> HTMLImageElement
 const imageCache = new Map<string, HTMLImageElement>()
+const legendDisplayY = new Map<string, number>()
+const WATERMARK_SRC = '/bg-transparent.png'
+const DESIGNER_LOGO_SRC = '/logo.png'
+type ConfettiPiece = {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number
+  rot: number
+  rotSpeed: number
+  color: string
+}
+let confettiPieces: ConfettiPiece[] = []
+let confettiActive = false
+let confettiStartMs = 0
+let confettiRafId: number | null = null
+
+function titleFontFamily(): string {
+  return props.config.chartFont === 'royal'
+    ? '"Canela", "Noe Display", Didot, "Bodoni 72", "Bodoni MT", "Times New Roman", serif'
+    : 'Inter, sans-serif'
+}
+
+function titleNormalFont(px: number): string {
+  return `${px}px ${titleFontFamily()}`
+}
+
+function titleBoldFont(px: number): string {
+  // Royal style uses a lighter high-contrast serif look.
+  if (props.config.chartFont === 'royal') {
+    return `900 ${px}px ${titleFontFamily()}`
+  }
+  return `900 ${px}px ${titleFontFamily()}`
+}
+
+function titleFontScale(): number {
+  return props.config.chartFont === 'royal' ? 1.36 : 1
+}
+
+function subtitleFontScale(): number {
+  return props.config.chartFont === 'royal' ? 1.05 : 1
+}
 
 function getImage(src: string): HTMLImageElement | null {
   if (!src) return null
@@ -94,27 +145,32 @@ function niceScale(min: number, max: number, maxTicks: number = 8): { min: numbe
 }
 
 function formatValue(v: number, sf = props.config.numberSuffixes): string {
+  const prefix = props.config.currency ?? ''
   const abs = Math.abs(v)
-  if (abs >= 1e9) return (v / 1e9).toFixed(1) + sf.billions
-  if (abs >= 1e6) return (v / 1e6).toFixed(1) + sf.millions
-  if (abs >= 1e3) return (v / 1e3).toFixed(1) + sf.thousands
-  if (abs < 0.01 && abs > 0) return v.toExponential(1)
-  if (Number.isInteger(v)) return v.toString()
-  return v.toFixed(1)
+  if (abs >= 1e9) return prefix + (v / 1e9).toFixed(1) + sf.billions
+  if (abs >= 1e6) return prefix + (v / 1e6).toFixed(1) + sf.millions
+  if (abs >= 1e3) return prefix + (v / 1e3).toFixed(1) + sf.thousands
+  if (abs < 0.01 && abs > 0) return prefix + v.toExponential(1)
+  if (Number.isInteger(v)) return prefix + v.toString()
+  return prefix + v.toFixed(1)
 }
 
-function isYearLike(series: Series[]): boolean {
-  // Matches whole years (2020) and fractional years from year+month encoding (2020.083...)
-  const allTimes = series.flatMap(s => s.data.map(d => d.time))
-  return allTimes.every(t => t >= 1900 && t < 2200)
+function formatDDMMYY(ms: number): string {
+  const d = new Date(ms)
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const yy = String(d.getUTCFullYear() % 100).padStart(2, '0')
+  return `${dd}/${mm}/${yy}`
 }
 
-function formatTime(v: number, yearMode: boolean): string {
-  if (yearMode) return Math.floor(v).toString()
-  return formatValue(v)
+function formatMMYY(ms: number): string {
+  const d = new Date(ms)
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const yy = String(d.getUTCFullYear() % 100).padStart(2, '0')
+  return `${mm}/${yy}`
 }
 
-function getVisibleData(series: Series[], progress: number): { points: { time: number; value: number }[]; maxTimeVisible: number }[] {
+function getVisibleData(series: Series[], progress: number): { points: { time: number; label: string; value: number }[]; maxTimeVisible: number }[] {
   if (series.length === 0) return []
 
   const allTimes = series.flatMap(s => s.data.map(d => d.time))
@@ -124,7 +180,7 @@ function getVisibleData(series: Series[], progress: number): { points: { time: n
 
   return series.map(s => {
     const sorted = [...s.data].sort((a, b) => a.time - b.time)
-    const visible: { time: number; value: number }[] = []
+    const visible: { time: number; label: string; value: number }[] = []
 
     if (sorted.length === 0 || sorted[0].time > currentTime) {
       return { points: visible, maxTimeVisible: currentTime }
@@ -137,7 +193,7 @@ function getVisibleData(series: Series[], progress: number): { points: { time: n
         const prev = sorted[i - 1]
         const next = sorted[i]
         const t = (currentTime - prev.time) / (next.time - prev.time)
-        visible.push({ time: currentTime, value: lerp(prev.value, next.value, t) })
+        visible.push({ time: currentTime, label: prev.label, value: lerp(prev.value, next.value, t) })
         break
       }
     }
@@ -157,6 +213,76 @@ function getDisplayTicks(displayMin: number, displayMax: number, maxTicks: numbe
     ticks.push(v)
   }
   return { step, ticks }
+}
+
+function getCurrentXLabel(series: Series[], currentTime: number): string {
+  if (props.config.xAxisMode === 'date-ddmmyy') {
+    return formatDDMMYY(currentTime)
+  }
+  if (props.config.xAxisMode === 'date-mmyy') {
+    return formatMMYY(currentTime)
+  }
+  if (props.config.xAxisMode === 'year') {
+    return Math.floor(currentTime).toString()
+  }
+  if (series.length === 0) return ''
+  const base = series[0]?.data ?? []
+  if (base.length === 0) return ''
+  const idx = Math.max(0, Math.min(base.length - 1, Math.floor(currentTime + 1e-6)))
+  return base[idx]?.label ?? ''
+}
+
+function getSeriesKey(ser: Series, idx: number): string {
+  return `${idx}:${ser.name}`
+}
+
+function startConfetti(width: number, height: number) {
+  const colors = ['#ffd84d', '#4f8ff7', '#f74f4f', '#4ff78f', '#c74ff7', '#ffffff']
+  confettiPieces = Array.from({ length: CONFETTI_COUNT }, (_, i) => {
+    const seed = i + 1
+    const randA = (Math.sin(seed * 12.9898) * 43758.5453) % 1
+    const randB = (Math.sin(seed * 78.233) * 12345.6789) % 1
+    const randC = (Math.sin(seed * 45.164) * 99999.9999) % 1
+    const r1 = randA < 0 ? randA + 1 : randA
+    const r2 = randB < 0 ? randB + 1 : randB
+    const r3 = randC < 0 ? randC + 1 : randC
+    return {
+      x: r1 * width,
+      y: -r2 * height * 0.7 - 20,
+      vx: (r2 - 0.5) * 2.2,
+      vy: 1.6 + r1 * 2.4,
+      size: 4 + r3 * 8,
+      rot: r1 * Math.PI,
+      rotSpeed: (r3 - 0.5) * 0.3,
+      color: colors[i % colors.length],
+    }
+  })
+  confettiActive = true
+  confettiStartMs = performance.now()
+}
+
+function runConfettiLoop() {
+  if (confettiRafId !== null) cancelAnimationFrame(confettiRafId)
+  const step = () => {
+    draw()
+    if (confettiActive) {
+      confettiRafId = requestAnimationFrame(step)
+    } else {
+      confettiRafId = null
+      draw() // ensure final still frame
+    }
+  }
+  confettiRafId = requestAnimationFrame(step)
+}
+
+function getRankedLegendItems(series: Series[], visibleData: { points: { time: number; label: string; value: number }[] }[]) {
+  return series.map((ser, idx) => {
+    const vd = visibleData[idx]
+    const currentValue = vd.points.length > 0
+      ? vd.points[vd.points.length - 1].value
+      : Number.NEGATIVE_INFINITY
+    return { ser, idx, currentValue }
+  }).sort((a, b) => b.currentValue - a.currentValue)
 }
 
 function draw() {
@@ -179,9 +305,12 @@ function draw() {
   for (const s of series) {
     if (s.image) getImage(s.image)
   }
+  getImage(WATERMARK_SRC)
+  getImage(DESIGNER_LOGO_SRC)
 
   const visibleData = getVisibleData(series, props.progress)
   const sc = textScale.value
+  const iconScale = ICON_SIZE_SCALE[props.config.iconSize ?? 'medium']
   const PAD = PADDING.value
   const chartLeft = PAD.left
   const chartRight = width - PAD.right
@@ -189,6 +318,22 @@ function draw() {
   const chartBottom = height - PAD.bottom
   const chartW = chartRight - chartLeft
   const chartH = chartBottom - chartTop
+
+  // Background watermark at chart center.
+  const watermark = getImage(WATERMARK_SRC)
+  if (watermark && watermark.complete && watermark.naturalWidth > 0) {
+    const maxW = chartW * 0.52
+    const maxH = chartH * 0.52
+    const scale = Math.min(maxW / watermark.naturalWidth, maxH / watermark.naturalHeight)
+    const wmW = watermark.naturalWidth * scale
+    const wmH = watermark.naturalHeight * scale
+    const wmX = chartLeft + (chartW - wmW) / 2
+    const wmY = chartTop + (chartH - wmH) / 2
+    ctx.save()
+    ctx.globalAlpha = 0.09
+    ctx.drawImage(watermark, wmX, wmY, wmW, wmH)
+    ctx.restore()
+  }
 
   // Compute target axes ranges from visible data
   const allVisibleValues: number[] = []
@@ -209,12 +354,11 @@ function draw() {
   const yMinRaw = Math.min(...allVisibleValues, 0)
   const yMaxRaw = Math.max(...allVisibleValues)
 
-  const yearMode = isYearLike(series)
   const targetYScale = niceScale(yMinRaw, yMaxRaw, 8)
 
   // X axis: use raw current time as max so the line head is always pinned to the right edge
   // The min is fixed to the global start. No rounding/nice-scaling on xMax.
-  displayXMin = yearMode ? Math.floor(globalMinTime) : globalMinTime
+  displayXMin = globalMinTime
   displayXMax = currentTime
 
   // Y axis: smooth lerp for nice transitions when scale jumps
@@ -265,7 +409,8 @@ function draw() {
   ctx.fillStyle = '#aaa'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillText(formatTime(currentTime, yearMode), chartRight, chartBottom + Math.round(16 * sc))
+  const currentLabel = getCurrentXLabel(series, currentTime)
+  ctx.fillText(currentLabel, chartRight, chartBottom + Math.round(16 * sc))
 
   // Axes border
   ctx.strokeStyle = '#333'
@@ -349,7 +494,7 @@ function draw() {
     // Draw image or dot at endpoint
     const img = ser.image ? getImage(ser.image) : null
     const dotR = Math.round(7 * sc)
-    const iconSize = Math.round(44 * sc)
+    const iconSize = Math.round(44 * sc * iconScale)
     if (img && img.complete && img.naturalWidth > 0) {
       ctx.save()
       ctx.beginPath()
@@ -380,28 +525,30 @@ function draw() {
   }
 
   // Title + subtitle
-  const titleSize = Math.round(40 * sc)
-  const subtitleSize = Math.round(27 * sc)
+  const titleScale = titleFontScale()
+  const subtitleScale = subtitleFontScale()
+  const titleSize = Math.round(42 * sc * titleScale)
+  const subtitleSize = Math.round(24 * sc * subtitleScale)
   const axisLabelSize = Math.round(28 * sc)
   const titleY = Math.round(36 * sc)
-  const subtitleY = titleY + titleSize + Math.round(8 * sc)
+  const subtitleY = titleY + titleSize + Math.round(14 * sc)
 
   ctx.fillStyle = '#e0e0e0'
-  ctx.font = `bold ${titleSize}px Inter, sans-serif`
+  ctx.font = titleBoldFont(titleSize)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillText(title, width / 2, titleY)
 
   if (props.config.subtitle) {
     ctx.fillStyle = '#888'
-    ctx.font = `${subtitleSize}px Inter, sans-serif`
+    ctx.font = titleNormalFont(subtitleSize)
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
     ctx.fillText(props.config.subtitle, width / 2, subtitleY)
   }
 
   // X label
-  ctx.fillStyle = '#888'
+  ctx.fillStyle = '#e0e0e0'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'bottom'
@@ -411,33 +558,166 @@ function draw() {
   ctx.save()
   ctx.translate(Math.round(56 * sc), height / 2)
   ctx.rotate(-Math.PI / 2)
-  ctx.fillStyle = '#888'
+  ctx.fillStyle = '#e0e0e0'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillText(props.config.yLabel, 0, 0)
   ctx.restore()
 
-  // Legend
+  // Legend (dynamic ranking by current visible value with smooth swapping animation)
   const legendFont = Math.round(28 * sc)
-  const legendSwatch = Math.round(22 * sc)
+  const legendSwatch = Math.round(22 * sc * iconScale)
   const legendGap = Math.round(38 * sc)
   const legendX = chartLeft + Math.round(16 * sc)
-  let legendY = chartTop + Math.round(20 * sc)
+  const legendTop = chartTop + Math.round(20 * sc)
   ctx.font = `${legendFont}px Inter, sans-serif`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  for (const ser of series) {
+
+  const rankedLegendItems = getRankedLegendItems(series, visibleData)
+
+  const showEndRanking = props.config.showEndRanking && props.progress >= 1
+  const activeLegendKeys = new Set(rankedLegendItems.map(item => getSeriesKey(item.ser, item.idx)))
+  for (const key of legendDisplayY.keys()) {
+    if (!activeLegendKeys.has(key)) legendDisplayY.delete(key)
+  }
+
+  for (let rank = 0; rank < rankedLegendItems.length; rank++) {
+    const { ser, idx } = rankedLegendItems[rank]
+    const key = getSeriesKey(ser, idx)
+
+    if (showEndRanking) {
+      const y = legendTop + rank * legendGap
+      legendDisplayY.set(key, y)
+      continue
+    }
+
+    const targetY = legendTop + rank * legendGap
+    const currentY = legendDisplayY.get(key) ?? targetY
+    const nextY = lerp(currentY, targetY, LEGEND_LERP_SPEED)
+    legendDisplayY.set(key, nextY)
+
     const img = ser.image ? getImage(ser.image) : null
     if (img && img.complete && img.naturalWidth > 0) {
-      ctx.drawImage(img, legendX, legendY - legendSwatch / 2, legendSwatch, legendSwatch)
+      ctx.drawImage(img, legendX, nextY - legendSwatch / 2, legendSwatch, legendSwatch)
     } else {
       ctx.fillStyle = ser.color
-      ctx.fillRect(legendX, legendY - legendSwatch / 2, legendSwatch, legendSwatch)
+      ctx.fillRect(legendX, nextY - legendSwatch / 2, legendSwatch, legendSwatch)
     }
     ctx.fillStyle = '#ccc'
-    ctx.fillText(ser.name, legendX + legendSwatch + Math.round(8 * sc), legendY)
-    legendY += legendGap
+    ctx.fillText(ser.name, legendX + legendSwatch + Math.round(8 * sc), nextY)
+  }
+
+  if (showEndRanking) {
+    const nowMs = performance.now()
+    if (confettiActive) {
+      const elapsed = nowMs - confettiStartMs
+      const t = Math.min(elapsed / CONFETTI_DURATION_MS, 1)
+      const gravity = 0.09
+      for (const p of confettiPieces) {
+        p.vy += gravity
+        p.x += p.vx
+        p.y += p.vy
+        p.rot += p.rotSpeed
+        if (p.y > height + 24) {
+          p.y = -20
+          p.vy = 1.2
+        }
+      }
+
+      for (const p of confettiPieces) {
+        ctx.save()
+        ctx.translate(p.x, p.y)
+        ctx.rotate(p.rot)
+        ctx.fillStyle = p.color
+        ctx.globalAlpha = 1 - t * 0.4
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.7)
+        ctx.restore()
+      }
+      ctx.globalAlpha = 1
+
+      if (t >= 1) confettiActive = false
+    }
+
+    // Dim the full recorded frame and show centered final ranking list.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+    ctx.fillRect(0, 0, width, height)
+
+    const overlayTitleSize = Math.round(34 * sc)
+    const overlayItemSize = Math.round(30 * sc)
+    const cardHeight = Math.round(62 * sc)
+    const cardGap = Math.round(10 * sc)
+    const cardRadius = Math.round(14 * sc)
+    const cardWidth = Math.min(Math.round(chartW * 0.82), Math.round(820 * sc))
+    const totalCardsHeight = rankedLegendItems.length * cardHeight + (rankedLegendItems.length - 1) * cardGap
+    const listTop = chartTop + chartH / 2 - totalCardsHeight / 2 + Math.round(6 * sc)
+    const cardLeft = chartLeft + (chartW - cardWidth) / 2
+
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#f5f5f5'
+    ctx.font = `bold ${overlayTitleSize}px Inter, sans-serif`
+    ctx.fillText('Final Ranking', chartLeft + chartW / 2, listTop - Math.round(52 * sc))
+
+    ctx.font = `bold ${overlayItemSize}px Inter, sans-serif`
+    for (let rank = 0; rank < rankedLegendItems.length; rank++) {
+      const { ser } = rankedLegendItems[rank]
+      const cardTop = listTop + rank * (cardHeight + cardGap)
+      const y = cardTop + cardHeight / 2
+      const rowText = `#${rank + 1} ${ser.name}`
+      const iconSize = Math.round(34 * sc * iconScale)
+      const iconGap = Math.round(14 * sc)
+      const iconX = cardLeft + Math.round(18 * sc)
+      const textX = iconX + iconSize + iconGap
+
+      // Kahoot-like colored ranking card (uniform size).
+      ctx.save()
+      ctx.fillStyle = ser.color
+      ctx.globalAlpha = 0.88
+      ctx.beginPath()
+      ctx.moveTo(cardLeft + cardRadius, cardTop)
+      ctx.lineTo(cardLeft + cardWidth - cardRadius, cardTop)
+      ctx.quadraticCurveTo(cardLeft + cardWidth, cardTop, cardLeft + cardWidth, cardTop + cardRadius)
+      ctx.lineTo(cardLeft + cardWidth, cardTop + cardHeight - cardRadius)
+      ctx.quadraticCurveTo(cardLeft + cardWidth, cardTop + cardHeight, cardLeft + cardWidth - cardRadius, cardTop + cardHeight)
+      ctx.lineTo(cardLeft + cardRadius, cardTop + cardHeight)
+      ctx.quadraticCurveTo(cardLeft, cardTop + cardHeight, cardLeft, cardTop + cardHeight - cardRadius)
+      ctx.lineTo(cardLeft, cardTop + cardRadius)
+      ctx.quadraticCurveTo(cardLeft, cardTop, cardLeft + cardRadius, cardTop)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+
+      const img = ser.image ? getImage(ser.image) : null
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, iconX, y - iconSize / 2, iconSize, iconSize)
+      } else {
+        ctx.fillStyle = ser.color
+        ctx.fillRect(iconX, y - iconSize / 2, iconSize, iconSize)
+      }
+
+      ctx.fillStyle = '#f5f5f5'
+      ctx.textAlign = 'left'
+      ctx.fillText(rowText, textX, y)
+    }
+
+    const footerY = chartBottom + Math.round(76 * sc)
+    const logo = getImage(DESIGNER_LOGO_SRC)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#d8d8d8'
+    ctx.font = `${Math.round(20 * sc)}px Inter, sans-serif`
+    ctx.fillText('Designed By', width / 2, footerY)
+    if (logo && logo.complete && logo.naturalWidth > 0) {
+      const logoMaxW = Math.round(140 * sc)
+      const logoScale = logoMaxW / logo.naturalWidth
+      const logoW = logoMaxW
+      const logoH = logo.naturalHeight * logoScale
+      const logoX = width / 2 - logoW / 2
+      const logoY = footerY + Math.round(18 * sc)
+      ctx.drawImage(logo, logoX, logoY, logoW, logoH)
+    }
   }
 
   emit('frame', canvas)
@@ -453,6 +733,11 @@ function animationLoop() {
 }
 
 watch(() => props.progress, () => {
+  if (props.progress >= 1 && props.config.showEndRanking && !confettiActive) {
+    const { width, height } = dims.value
+    startConfetti(width, height)
+    runConfettiLoop()
+  }
   if (!props.playing) draw()
 })
 
@@ -465,6 +750,13 @@ watch(() => props.playing, (val) => {
 watch(() => props.config, () => {
   axisInitialized = false
   imageCache.clear()
+  legendDisplayY.clear()
+  confettiActive = false
+  confettiPieces = []
+  if (confettiRafId !== null) {
+    cancelAnimationFrame(confettiRafId)
+    confettiRafId = null
+  }
   draw()
 }, { deep: true })
 
@@ -474,6 +766,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (rafId !== null) cancelAnimationFrame(rafId)
+  if (confettiRafId !== null) cancelAnimationFrame(confettiRafId)
 })
 </script>
 

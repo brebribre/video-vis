@@ -1,5 +1,6 @@
 export interface DataPoint {
   time: number
+  label: string
   value: number
 }
 
@@ -11,6 +12,9 @@ export interface Series {
 }
 
 export type AspectRatio = '1:1' | '16:9' | '4:5' | '9:16'
+export type XAxisMode = 'text' | 'date-ddmmyy' | 'date-mmyy' | 'year'
+export type IconSize = 'small' | 'medium' | 'large'
+export type ChartFont = 'modern' | 'royal'
 
 export interface NumberSuffixes {
   thousands: string  // e.g. "K" or "Rb"
@@ -28,10 +32,15 @@ export const NUMBER_SUFFIX_PRESETS: Record<string, NumberSuffixes> = {
 export interface ChartConfig {
   series: Series[]
   aspectRatio: AspectRatio
+  xAxisMode: XAxisMode
   title: string
   subtitle: string
   xLabel: string
   yLabel: string
+  currency: string
+  iconSize: IconSize
+  chartFont: ChartFont
+  showEndRanking: boolean
   animationDuration: number // seconds
   textSize: number // multiplier, 1 = default
   numberSuffixes: NumberSuffixes
