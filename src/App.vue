@@ -26,7 +26,7 @@ const config = ref<ChartConfig>({
 const progress = ref(0)
 const playing = ref(false)
 const playbackSpeed = ref(1)
-type ExportFormat = 'webm' | 'hevc-mp4'
+type ExportFormat = 'webm' | 'mp4' | 'hevc'
 const exportFormat = ref<ExportFormat>('webm')
 let startTime = 0
 let startProgress = 0
@@ -116,11 +116,19 @@ function pickSupportedMimeType(candidates: string[]): string | null {
 }
 
 function getRecordingConfig() {
-  if (exportFormat.value === 'hevc-mp4') {
+  if (exportFormat.value === 'mp4') {
+    const mp4Candidates = ['video/mp4;codecs=hvc1', 'video/mp4;codecs=hev1', 'video/mp4']
+    const supportedMp4 = pickSupportedMimeType(mp4Candidates)
+    if (supportedMp4) {
+      return { mimeType: supportedMp4, blobType: 'video/mp4', extension: 'mp4' }
+    }
+  }
+
+  if (exportFormat.value === 'hevc') {
     const hevcCandidates = ['video/mp4;codecs=hvc1', 'video/mp4;codecs=hev1', 'video/mp4']
     const supportedHevc = pickSupportedMimeType(hevcCandidates)
     if (supportedHevc) {
-      return { mimeType: supportedHevc, blobType: 'video/mp4', extension: 'mp4' }
+      return { mimeType: supportedHevc, blobType: 'video/mp4', extension: 'mov' }
     }
   }
 
@@ -227,7 +235,8 @@ onUnmounted(() => {
             <label>Export</label>
             <select v-model="exportFormat">
               <option value="webm">WebM</option>
-              <option value="hevc-mp4">HEVC MP4</option>
+              <option value="mp4">MP4</option>
+              <option value="hevc">HEVC (.mov)</option>
             </select>
           </div>
           <button class="primary record-btn" @click="startRecording" :disabled="recording">

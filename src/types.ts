@@ -12,7 +12,7 @@ export interface Series {
 }
 
 export type AspectRatio = '1:1' | '16:9' | '4:5' | '9:16'
-export type XAxisMode = 'text' | 'date-ddmmyy' | 'date-mmyy' | 'year'
+export type XAxisMode = 'text' | 'date-ddmmyy' | 'date-mmyy' | 'year' | 'datetime-hhmm-ddmmyy'
 export type IconSize = 'small' | 'medium' | 'large'
 export type ChartFont = 'modern' | 'royal'
 export type CurrencyPosition = 'prefix' | 'suffix'
@@ -28,6 +28,12 @@ export const NUMBER_SUFFIX_PRESETS: Record<string, NumberSuffixes> = {
   'Indonesian': { thousands: 'Rb', millions: 'Jt', billions: 'M'  },
   'Japanese':   { thousands: 'K',  millions: '百万', billions: '十億' },
   'Custom':     { thousands: 'K',  millions: 'M',  billions: 'B'  },
+}
+
+export interface Caption {
+  text: string
+  appearAt: number   // seconds into the animation
+  duration: number   // how long the caption is visible (seconds)
 }
 
 export interface ChartConfig {
@@ -47,6 +53,7 @@ export interface ChartConfig {
   animationDuration: number // seconds
   textSize: number // multiplier, 1 = default
   numberSuffixes: NumberSuffixes
+  captions: Caption[]
 }
 
 export const ASPECT_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {

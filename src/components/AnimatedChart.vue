@@ -187,6 +187,16 @@ function formatMMYY(ms: number): string {
   return `${mm}/${yy}`
 }
 
+function formatHHMMDDMMYY(ms: number): string {
+  const d = new Date(ms)
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const min = String(d.getUTCMinutes()).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const yy = String(d.getUTCFullYear() % 100).padStart(2, '0')
+  return `${hh}:${min} ${dd}/${mm}/${yy}`
+}
+
 function getVisibleData(series: Series[], progress: number): { points: { time: number; label: string; value: number }[]; maxTimeVisible: number }[] {
   if (series.length === 0) return []
 
@@ -241,6 +251,9 @@ function getCurrentXLabel(series: Series[], currentTime: number): string {
   }
   if (props.config.xAxisMode === 'year') {
     return Math.floor(currentTime).toString()
+  }
+  if (props.config.xAxisMode === 'datetime-hhmm-ddmmyy') {
+    return formatHHMMDDMMYY(currentTime)
   }
   if (series.length === 0) return ''
   const base = series[0]?.data ?? []
@@ -452,7 +465,7 @@ function draw() {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const currentLabel = getCurrentXLabel(series, currentTime)
-  ctx.fillText(currentLabel, chartRight, chartBottom + Math.round(16 * sc))
+  ctx.fillText(currentLabel, chartRight, chartBottom + Math.round(28 * sc))
 
   // Axes border
   ctx.strokeStyle = '#333'
@@ -760,6 +773,37 @@ function draw() {
       const logoX = width / 2 - logoW / 2
       const logoY = footerY + Math.round(18 * sc)
       ctx.drawImage(logo, logoX, logoY, logoW, logoH)
+    }
+  }
+
+  // Captions (hidden during end ranking)
+  if (!showEndRanking) {
+    const totalDuration = props.config.animationDuration
+    const currentSeconds = props.progress * totalDuration
+    const CAPTION_FADE = 0.3 // seconds for fade in/out
+    for (const cap of (props.config.captions ?? [])) {
+      const start = cap.appearAt
+      const end = cap.appearAt + cap.duration
+      if (currentSeconds < start || currentSeconds > end) continue
+
+      // Compute fade alpha (clamp so it's visible even at exact boundaries)
+      let alpha = 1
+      const elapsed = currentSeconds - start
+      const remaining = end - currentSeconds
+      if (elapsed < CAPTION_FADE && elapsed > 0) {
+        alpha = elapsed / CAPTION_FADE
+      } else if (remaining < CAPTION_FADE && remaining > 0) {
+        alpha = remaining / CAPTION_FADE
+      }
+
+      ctx.save()
+      ctx.globalAlpha = alpha
+      ctx.fillStyle = '#fce9a0' // pastel yellow
+      ctx.font = `${Math.round(32 * sc)}px Inter, sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.fillText(cap.text, width / 2, chartBottom + Math.round(82 * sc))
+      ctx.restore()
     }
   }
 

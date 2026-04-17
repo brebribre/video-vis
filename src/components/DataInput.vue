@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { Series, AspectRatio, NumberSuffixes, XAxisMode, IconSize, ChartFont, CurrencyPosition } from '../types'
+import type { Series, AspectRatio, NumberSuffixes, XAxisMode, IconSize, ChartFont, CurrencyPosition, Caption } from '../types'
 import { DEFAULT_COLORS, NUMBER_SUFFIX_PRESETS } from '../types'
 
 const emit = defineEmits<{
@@ -21,6 +21,7 @@ const emit = defineEmits<{
     animationDuration: number
     textSize: number
     numberSuffixes: NumberSuffixes
+    captions: Caption[]
   }]
 }>()
 
@@ -41,6 +42,16 @@ const textSize = ref(1)
 
 const suffixPreset = ref('English')
 const suffixes = ref<NumberSuffixes>({ ...NUMBER_SUFFIX_PRESETS['English'] })
+
+const captions = ref<Caption[]>([])
+
+function addCaption() {
+  captions.value.push({ text: '', appearAt: 0, duration: 2 })
+}
+
+function removeCaption(index: number) {
+  captions.value.splice(index, 1)
+}
 
 watch(suffixPreset, (preset) => {
   if (preset !== 'Custom') {
@@ -138,6 +149,20 @@ function parseMMYYToMs(input: string): number | null {
   return Date.UTC(year, month - 1, 1)
 }
 
+function parseDatetimeHHMMDDMMYYToMs(input: string): number | null {
+  // Accepts: "09:30 14/04/26" → HH:MM DD/MM/YY
+  const m = input.trim().match(/^(\d{1,2}):(\d{2})\s+(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/)
+  if (!m) return null
+  const hours = Number.parseInt(m[1], 10)
+  const minutes = Number.parseInt(m[2], 10)
+  const day = Number.parseInt(m[3], 10)
+  const month = Number.parseInt(m[4], 10)
+  const rawYear = Number.parseInt(m[5], 10)
+  const year = m[5].length === 2 ? 2000 + rawYear : rawYear
+  if (hours > 23 || minutes > 59 || day < 1 || day > 31 || month < 1 || month > 12) return null
+  return Date.UTC(year, month - 1, day, hours, minutes)
+}
+
 function parseYear(input: string): number | null {
   const trimmed = input.trim()
   if (!/^\d{4}$/.test(trimmed)) return null
@@ -158,6 +183,12 @@ function parseSeries(input: SeriesInput): Series {
       const label = parts.slice(0, -1).join(',').trim()
       const value = parseFloat(parts[parts.length - 1])
       if (!label || Number.isNaN(value)) return null
+
+      if (xAxisMode.value === 'datetime-hhmm-ddmmyy') {
+        const parsedMs = parseDatetimeHHMMDDMMYYToMs(label)
+        if (parsedMs === null) return null
+        return { time: parsedMs, label, value }
+      }
 
       if (xAxisMode.value === 'date-ddmmyy') {
         const parsedMs = parseDDMMYYToMs(label)
@@ -186,6 +217,15 @@ function parseSeries(input: SeriesInput): Series {
 }
 
 function formatLabelFromTime(time: number): string {
+  if (xAxisMode.value === 'datetime-hhmm-ddmmyy') {
+    const d = new Date(time)
+    const hh = String(d.getUTCHours()).padStart(2, '0')
+    const min = String(d.getUTCMinutes()).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const yy = String(d.getUTCFullYear() % 100).padStart(2, '0')
+    return `${hh}:${min} ${dd}/${mm}/${yy}`
+  }
   if (xAxisMode.value === 'date-ddmmyy') {
     const d = new Date(time)
     const dd = String(d.getUTCDate()).padStart(2, '0')
@@ -243,7 +283,9 @@ const csvPlaceholder = computed(() =>
       ? 'month,value (MM/YY)\n02/25,100\n07/25,200'
     : xAxisMode.value === 'year'
       ? 'year,value\n2020,100\n2021,200'
-      : 'x,value (one per line)\n2020,100\nQ1 2025,200',
+      : xAxisMode.value === 'datetime-hhmm-ddmmyy'
+        ? 'datetime,value (HH:MM DD/MM/YY)\n09:30 14/04/26,100\n10:00 14/04/26,200'
+        : 'x,value (one per line)\n2020,100\nQ1 2025,200',
 )
 
 function apply() {
@@ -264,6 +306,7 @@ function apply() {
     animationDuration: animationDuration.value,
     textSize: textSize.value,
     numberSuffixes: { ...suffixes.value },
+    captions: captions.value.filter(c => c.text.trim()),
   })
 }
 
@@ -285,6 +328,7 @@ watch(
     textSize,
     suffixPreset,
     suffixes,
+    captions,
   ],
   () => {
     apply()
@@ -322,6 +366,7 @@ apply()
           <option value="year">Year only</option>
           <option value="date-ddmmyy">Date (DD/MM/YY)</option>
           <option value="date-mmyy">Date (MM/YY)</option>
+          <option value="datetime-hhmm-ddmmyy">Datetime (HH:MM DD/MM/YY)</option>
         </select>
       </div>
     </div>
@@ -426,6 +471,25 @@ apply()
       1,000,000 = 1{{ suffixes.millions }} &nbsp;·&nbsp;
       1,000,000,000 = 1{{ suffixes.billions }}
     </div>
+
+    <h3>Captions</h3>
+    <div v-for="(cap, ci) in captions" :key="ci" class="caption-block">
+      <div class="caption-header">
+        <input v-model="cap.text" placeholder="Caption text" class="caption-text" />
+        <button class="remove-btn" @click="removeCaption(ci)">Remove</button>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Appear at (s)</label>
+          <input type="number" v-model.number="cap.appearAt" min="0" step="0.5" />
+        </div>
+        <div class="field">
+          <label>Duration (s)</label>
+          <input type="number" v-model.number="cap.duration" min="0.5" step="0.5" />
+        </div>
+      </div>
+    </div>
+    <button class="add-btn" @click="addCaption">+ Add Caption</button>
 
     <h3>Data Series</h3>
 
@@ -535,6 +599,27 @@ h3 {
   border-radius: 4px;
   padding: 6px 10px;
   font-family: 'Fira Code', monospace;
+}
+
+.caption-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #1a1a1a;
+  border-radius: 6px;
+  border: 1px solid #2a2a2a;
+  margin-bottom: 8px;
+}
+
+.caption-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caption-text {
+  flex: 1;
 }
 
 .series-header {
