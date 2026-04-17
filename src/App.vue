@@ -21,6 +21,7 @@ const config = ref<ChartConfig>({
   animationDuration: 5,
   textSize: 1,
   numberSuffixes: { thousands: 'K', millions: 'M', billions: 'B' },
+  captions: [],
 })
 
 const progress = ref(0)
