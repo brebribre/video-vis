@@ -1,5 +1,6 @@
 export interface DataPoint {
   time: number
+  label: string
   value: number
 }
 
@@ -11,6 +12,10 @@ export interface Series {
 }
 
 export type AspectRatio = '9:16' | '4:5'
+export type XAxisMode = 'text' | 'date-ddmmyy' | 'date-mmyy' | 'year' | 'datetime-hhmm-ddmmyy'
+export type IconSize = 'small' | 'medium' | 'large'
+export type ChartFont = 'modern' | 'royal'
+export type CurrencyPosition = 'prefix' | 'suffix'
 
 export interface NumberSuffixes {
   thousands: string  // e.g. "K" or "Rb"
@@ -25,16 +30,30 @@ export const NUMBER_SUFFIX_PRESETS: Record<string, NumberSuffixes> = {
   'Custom':     { thousands: 'K',  millions: 'M',  billions: 'B'  },
 }
 
+export interface Caption {
+  text: string
+  appearAt: number   // seconds into the animation
+  duration: number   // how long the caption is visible (seconds)
+}
+
 export interface ChartConfig {
   series: Series[]
   aspectRatio: AspectRatio
+  xAxisMode: XAxisMode
   title: string
   subtitle: string
   xLabel: string
   yLabel: string
+  currency: string
+  currencyPosition: CurrencyPosition
+  allowNegative: boolean
+  iconSize: IconSize
+  chartFont: ChartFont
+  showEndRanking: boolean
   animationDuration: number // seconds
   textSize: number // multiplier, 1 = default
   numberSuffixes: NumberSuffixes
+  captions: Caption[]
 }
 
 export const ASPECT_DIMENSIONS: Record<AspectRatio, { width: number; height: number }> = {
