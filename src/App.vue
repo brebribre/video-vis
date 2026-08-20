@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
-import type { ChartConfig } from './types'
+import { ref, computed, onUnmounted } from 'vue'
+import type { ChartConfig, PlatformPreview } from './types'
+import { SAFE_ZONES, overlayVariantFor } from './types'
 import AnimatedChart from './components/AnimatedChart.vue'
 import DataInput from './components/DataInput.vue'
+import PlatformOverlay from './components/PlatformOverlay.vue'
 
 const config = ref<ChartConfig>({
   series: [],
-  aspectRatio: '16:9',
+  aspectRatio: '9:16',
   title: '',
   subtitle: '',
   xLabel: '',
@@ -19,6 +21,24 @@ const config = ref<ChartConfig>({
 const progress = ref(0)
 const playing = ref(false)
 const playbackSpeed = ref(1)
+
+// Platform chrome mock — DOM-only, so it never reaches the recorded canvas stream
+const platformPreview = ref<PlatformPreview>('none')
+const showSafeZones = ref(true)
+const mockUsername = ref('@yourhandle')
+const mockCaption = ref('The chart nobody expected 📈 #data #ai #charts')
+
+// Picking a platform also composes the chart for it: the drawn frame is inset to
+// that platform's safe zone, so the exported video clears the real UI chrome.
+const activeVariant = computed(() =>
+  overlayVariantFor(platformPreview.value, config.value.aspectRatio),
+)
+const activeSafeZone = computed(() =>
+  activeVariant.value ? SAFE_ZONES[activeVariant.value] : null,
+)
+
+// Feed chrome renders above and below the frame, so the stage needs room for it
+const feedChrome = computed(() => activeVariant.value === 'ig-feed')
 let startTime = 0
 let startProgress = 0
 let animFrameId: number | null = null
@@ -138,14 +158,51 @@ onUnmounted(() => {
     <DataInput @apply="onApply" />
 
     <div class="chart-area">
-      <AnimatedChart
-        :config="config"
-        :playing="playing"
-        :progress="progress"
-        @frame="onFrame"
-      />
+      <div class="stage" :class="{ 'has-feed-chrome': feedChrome }">
+        <AnimatedChart
+          :config="config"
+          :playing="playing"
+          :progress="progress"
+          :safe-zone="activeSafeZone"
+          @frame="onFrame"
+        />
+        <PlatformOverlay
+          :platform="platformPreview"
+          :aspect-ratio="config.aspectRatio"
+          :show-safe-zones="showSafeZones"
+          :username="mockUsername"
+          :caption="mockCaption"
+        />
+      </div>
 
       <div class="controls">
+        <div class="preview-bar">
+          <div class="seg">
+            <button
+              v-for="p in (['none', 'tiktok', 'instagram'] as PlatformPreview[])"
+              :key="p"
+              :class="{ active: platformPreview === p }"
+              @click="platformPreview = p"
+            >
+              {{ p === 'none' ? 'No overlay' : p === 'tiktok' ? 'TikTok' : 'Instagram' }}
+            </button>
+          </div>
+
+          <template v-if="platformPreview !== 'none'">
+            <label class="check">
+              <input type="checkbox" v-model="showSafeZones" />
+              Safe zones
+            </label>
+            <input v-model="mockUsername" class="mock-input handle-input" placeholder="@handle" />
+            <input v-model="mockCaption" class="mock-input" placeholder="Mock caption" />
+          </template>
+
+          <span v-if="platformPreview === 'tiktok' && config.aspectRatio === '4:5'" class="warn">
+            TikTok plays 9:16 — a 4:5 upload gets padded.
+          </span>
+          <span v-else class="hint">Overlay is preview only — it is not recorded.</span>
+        </div>
+
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: (progress * 100) + '%' }" />
         </div>
@@ -191,6 +248,89 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: 16px;
   flex: 1;
+}
+
+.stage {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+/* Instagram feed chrome sits outside the media — reserve room so it isn't clipped.
+   The overlay sizes itself in cqw, so the reserved space has to scale with the
+   frame width: 4:5 means width = height x 0.8, capped by the available width. */
+.stage.has-feed-chrome {
+  --frame-w: min(100%, calc(var(--frame-max-h) * 0.8));
+  margin-top: calc(var(--frame-w) * 0.11);
+  margin-bottom: calc(var(--frame-w) * 0.22);
+}
+
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.seg button {
+  border: none;
+  border-radius: 0;
+  padding: 7px 14px;
+  font-size: 13px;
+  background: transparent;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--border);
+}
+
+.seg button.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.check input {
+  accent-color: var(--accent);
+}
+
+.mock-input {
+  padding: 6px 10px;
+  font-size: 13px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.handle-input {
+  flex: 0 0 130px;
+  min-width: 0;
+}
+
+.hint,
+.warn {
+  font-size: 12px;
+  color: #555;
+}
+
+.warn {
+  color: #f7c94f;
 }
 
 .controls {

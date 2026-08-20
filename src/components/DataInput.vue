@@ -21,7 +21,7 @@ const title = ref('Revenue Comparison')
 const subtitle = ref('Annual revenue in millions USD')
 const xLabel = ref('Year')
 const yLabel = ref('Revenue ($)')
-const aspectRatio = ref<AspectRatio>('16:9')
+const aspectRatio = ref<AspectRatio>('9:16')
 const animationDuration = ref(5)
 const textSize = ref(1)
 
@@ -169,10 +169,8 @@ apply()
       <div class="field">
         <label>Format</label>
         <select v-model="aspectRatio">
-          <option value="16:9">Desktop (16:9)</option>
-          <option value="1:1">Square (1:1)</option>
-          <option value="4:5">Portrait (4:5)</option>
-          <option value="9:16">Story / Reel (9:16)</option>
+          <option value="9:16">Reel / TikTok (9:16)</option>
+          <option value="4:5">Feed post (4:5)</option>
         </select>
       </div>
       <div class="field">

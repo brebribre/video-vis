@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
-import type { ChartConfig, Series } from '../types'
+import type { ChartConfig, Series, SafeZone } from '../types'
 import { ASPECT_DIMENSIONS } from '../types'
 
 const props = defineProps<{
   config: ChartConfig
   playing: boolean
   progress: number // 0..1
+  // When set, every drawn element is kept inside this inset so it can't end up
+  // under the platform's UI chrome. Null lays out against the full frame.
+  safeZone?: SafeZone | null
 }>()
 
 const emit = defineEmits<{
@@ -17,23 +20,24 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 const dims = computed(() => ASPECT_DIMENSIONS[props.config.aspectRatio])
 
-const isPortrait = computed(() => {
-  const r = props.config.aspectRatio
-  return r === '4:5' || r === '9:16'
-})
-
 // Scale factor relative to a 1280×720 baseline, multiplied by user-controlled size
 const textScale = computed(() => {
   const { width, height } = dims.value
   return (Math.sqrt(width * height) / 960) * (props.config.textSize ?? 1)
 })
 
-// Portrait formats get extra vertical padding for title/subtitle
-const PADDING = computed(() => {
-  const s = textScale.value
-  return isPortrait.value
-    ? { top: Math.round(280 * s), right: Math.round(260 * s), bottom: Math.round(220 * s), left: Math.round(230 * s) }
-    : { top: Math.round(200 * s), right: Math.round(280 * s), bottom: Math.round(180 * s), left: Math.round(220 * s) }
+// The safe zone as pixels of the current frame. Everything the chart draws is
+// laid out inside this box, so nothing lands under the platform's UI chrome.
+const safeInset = computed(() => {
+  const { width, height } = dims.value
+  const z = props.safeZone
+  if (!z) return { top: 0, right: 0, bottom: 0, left: 0 }
+  return {
+    top: Math.round(z.top * height),
+    right: Math.round(z.right * width),
+    bottom: Math.round(z.bottom * height),
+    left: Math.round(z.left * width),
+  }
 })
 const AXIS_LERP_SPEED = 0.03 // per frame, controls smoothness
 
@@ -59,6 +63,10 @@ function getImage(src: string): HTMLImageElement | null {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v
 }
 
 function niceNum(range: number, round: boolean): number {
@@ -182,13 +190,64 @@ function draw() {
 
   const visibleData = getVisibleData(series, props.progress)
   const sc = textScale.value
-  const PAD = PADDING.value
-  const chartLeft = PAD.left
-  const chartRight = width - PAD.right
-  const chartTop = PAD.top
-  const chartBottom = height - PAD.bottom
+
+  // ---- Layout ----------------------------------------------------------
+  // Everything is anchored to the content box (the frame minus the platform's
+  // safe-zone inset) rather than to the frame itself.
+  const safe = safeInset.value
+  const contentTop = safe.top
+  const contentBottom = height - safe.bottom
+  const contentLeft = safe.left
+  const contentRight = width - safe.right
+
+  const titleSize = Math.round(40 * sc)
+  const subtitleSize = Math.round(27 * sc)
+  const axisLabelSize = Math.round(28 * sc)
+  const tickFontPx = Math.round(28 * sc)
+  const headFontPx = Math.round(30 * sc)
+
+  // Title block sits at the top of the content box
+  const titleY = contentTop + Math.round(30 * sc)
+  const subtitleY = titleY + titleSize + Math.round(8 * sc)
+  const titleBlockBottom = props.config.subtitle ? subtitleY + subtitleSize : titleY + titleSize
+
+  // Measure the chart furniture so the plot box is sized to what's actually
+  // drawn. Measurements use the global extremes, not the currently visible
+  // ones, so the plot box stays put instead of jittering during playback.
+  const allValues = series.flatMap(s => s.data.map(d => d.value))
+  const widestValue = Math.max(...allValues.map(Math.abs), 0)
+
+  ctx.font = `${tickFontPx}px Inter, sans-serif`
+  const yTickW = ctx.measureText(formatValue(widestValue)).width
+
+  ctx.font = `bold ${headFontPx}px Inter, sans-serif`
+  const headLabelW = ctx.measureText(formatValue(widestValue)).width
+
+  const chartTop = titleBlockBottom + Math.round(46 * sc)
+  const chartBottom = contentBottom - (axisLabelSize + tickFontPx + Math.round(56 * sc))
+  const chartLeft = contentLeft + Math.round(yTickW) + axisLabelSize + Math.round(40 * sc)
+  const chartRight = contentRight - Math.round(20 * sc)
   const chartW = chartRight - chartLeft
   const chartH = chartBottom - chartTop
+  if (chartW <= 0 || chartH <= 0) return
+
+  // ---- Data region -----------------------------------------------------
+  // The series is mapped into a region inset from the plot box, so the endpoint
+  // marker and its value label — which hang off the head of each line — stay
+  // inside the plot box instead of spilling past its right edge.
+  const dotR = Math.round(7 * sc)
+  const iconSize = Math.round(44 * sc)
+  const markerR = Math.round(iconSize / 2)
+  // Enough for the widest label the animation can reach, so the region is fixed
+  const headRoom = markerR + Math.round(12 * sc) + Math.ceil(headLabelW)
+  // Half a line of label text, so a head at the extreme doesn't clip vertically
+  const vPad = Math.max(markerR, Math.round(headFontPx * 0.62))
+
+  const dataLeft = chartLeft + markerR
+  const dataRight = chartRight - headRoom
+  const dataTop = chartTop + vPad
+  const dataBottom = chartBottom - vPad
+  if (dataRight <= dataLeft || dataBottom <= dataTop) return
 
   // Compute target axes ranges from visible data
   const allVisibleValues: number[] = []
@@ -217,28 +276,32 @@ function draw() {
   displayXMin = yearMode ? Math.floor(globalMinTime) : globalMinTime
   displayXMax = currentTime
 
-  // Y axis: smooth lerp for nice transitions when scale jumps
+  // Y axis: smooth lerp for nice transitions when scale jumps.
+  // The eased range must still enclose the data every frame — otherwise a fast
+  // rise outruns the axis and points map outside the plot box entirely.
   if (!axisInitialized) {
     displayYMin = targetYScale.min
     displayYMax = targetYScale.max
     axisInitialized = true
   } else {
-    displayYMin = lerp(displayYMin, targetYScale.min, AXIS_LERP_SPEED)
-    displayYMax = lerp(displayYMax, targetYScale.max, AXIS_LERP_SPEED)
+    displayYMax = Math.max(lerp(displayYMax, targetYScale.max, AXIS_LERP_SPEED), yMaxRaw)
+    displayYMin = Math.min(lerp(displayYMin, targetYScale.min, AXIS_LERP_SPEED), yMinRaw)
   }
 
+  const dataW = dataRight - dataLeft
+  const dataH = dataBottom - dataTop
+
   function mapX(time: number): number {
-    if (displayXMax === displayXMin) return chartLeft + chartW / 2
-    return chartLeft + ((time - displayXMin) / (displayXMax - displayXMin)) * chartW
+    if (displayXMax === displayXMin) return dataLeft + dataW / 2
+    return dataLeft + ((time - displayXMin) / (displayXMax - displayXMin)) * dataW
   }
 
   function mapY(value: number): number {
-    if (displayYMax === displayYMin) return chartTop + chartH / 2
-    return chartBottom - ((value - displayYMin) / (displayYMax - displayYMin)) * chartH
+    if (displayYMax === displayYMin) return dataTop + dataH / 2
+    return dataBottom - ((value - displayYMin) / (displayYMax - displayYMin)) * dataH
   }
 
   // Compute how many ticks actually fit given font size and chart dimensions
-  const tickFontPx = Math.round(28 * sc)
   const maxYTicks = Math.max(2, Math.floor(chartH / (tickFontPx * 2.5)))
 
   // Grid lines using display range
@@ -261,11 +324,17 @@ function draw() {
     ctx.fillText(formatValue(v), chartLeft - Math.round(18 * sc), y)
   }
 
-  // X axis — single label at the right edge, aligned with line heads
+  // X axis — single label tracking the line heads, clamped to the plot box
   ctx.fillStyle = '#aaa'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillText(formatTime(currentTime, yearMode), chartRight, chartBottom + Math.round(16 * sc))
+  const xTickText = formatTime(currentTime, yearMode)
+  const xTickHalf = ctx.measureText(xTickText).width / 2
+  const xTickCx = Math.min(
+    Math.max(dataRight, chartLeft + xTickHalf),
+    chartRight - xTickHalf,
+  )
+  ctx.fillText(xTickText, xTickCx, chartBottom + Math.round(16 * sc))
 
   // Axes border
   ctx.strokeStyle = '#333'
@@ -334,22 +403,20 @@ function draw() {
   ctx.shadowBlur = 0
   ctx.globalAlpha = 1
 
-  ctx.restore() // un-clip
-
-  // Draw endpoints (dots/images + labels) on top, outside clip
+  // Endpoints stay inside the plot box, so they are drawn within the same clip
   for (let si = 0; si < series.length; si++) {
     const ser = series[si]
     const vd = visibleData[si]
     if (vd.points.length < 1) continue
 
+    // Pinned to the data region: the marker and its label must stay in the box
+    // even if the eased axis is momentarily behind the data.
     const last = vd.points[vd.points.length - 1]
-    const px = mapX(last.time)
-    const py = mapY(last.value)
+    const px = clamp(mapX(last.time), dataLeft, dataRight)
+    const py = clamp(mapY(last.value), dataTop, dataBottom)
 
     // Draw image or dot at endpoint
     const img = ser.image ? getImage(ser.image) : null
-    const dotR = Math.round(7 * sc)
-    const iconSize = Math.round(44 * sc)
     if (img && img.complete && img.naturalWidth > 0) {
       ctx.save()
       ctx.beginPath()
@@ -370,46 +437,44 @@ function draw() {
       ctx.fill()
     }
 
-    // Value label at end
-    const labelOffset = (img && img.complete && img.naturalWidth > 0) ? iconSize / 2 + Math.round(8 * sc) : dotR + Math.round(8 * sc)
+    // Value label at end — headRoom above reserves exactly this much space
+    const labelOffset = (img && img.complete && img.naturalWidth > 0) ? markerR + Math.round(8 * sc) : dotR + Math.round(8 * sc)
     ctx.fillStyle = ser.color
-    ctx.font = `bold ${Math.round(30 * sc)}px Inter, sans-serif`
+    ctx.font = `bold ${headFontPx}px Inter, sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(formatValue(last.value), px + labelOffset, py)
   }
 
-  // Title + subtitle
-  const titleSize = Math.round(40 * sc)
-  const subtitleSize = Math.round(27 * sc)
-  const axisLabelSize = Math.round(28 * sc)
-  const titleY = Math.round(36 * sc)
-  const subtitleY = titleY + titleSize + Math.round(8 * sc)
+  ctx.restore() // un-clip the plot box
+
+  // Title + subtitle (anchored to the top of the content box)
+  const contentCenterX = (contentLeft + contentRight) / 2
 
   ctx.fillStyle = '#e0e0e0'
   ctx.font = `bold ${titleSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillText(title, width / 2, titleY)
+  ctx.fillText(title, contentCenterX, titleY)
 
   if (props.config.subtitle) {
     ctx.fillStyle = '#888'
     ctx.font = `${subtitleSize}px Inter, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'top'
-    ctx.fillText(props.config.subtitle, width / 2, subtitleY)
+    ctx.fillText(props.config.subtitle, contentCenterX, subtitleY)
   }
 
-  // X label
+  // X label — pinned to the bottom of the content box
   ctx.fillStyle = '#888'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'bottom'
-  ctx.fillText(props.config.xLabel, width / 2, height - Math.round(52 * sc))
+  ctx.fillText(props.config.xLabel, contentCenterX, contentBottom - Math.round(20 * sc))
 
-  // Y label
+  // Y label — centred on the plot, just inside the left edge of the content box
   ctx.save()
-  ctx.translate(Math.round(56 * sc), height / 2)
+  ctx.translate(contentLeft + Math.round(16 * sc), (chartTop + chartBottom) / 2)
   ctx.rotate(-Math.PI / 2)
   ctx.fillStyle = '#888'
   ctx.font = `${axisLabelSize}px Inter, sans-serif`
@@ -468,6 +533,9 @@ watch(() => props.config, () => {
   draw()
 }, { deep: true })
 
+// Switching platform re-insets the layout, so the frame has to be repainted
+watch(() => props.safeZone, () => draw())
+
 onMounted(() => {
   draw()
 })
@@ -478,13 +546,14 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- The bitmap size is set imperatively in draw(). Binding :width/:height here
+       too would re-patch the attributes after the watcher has already painted,
+       resetting the bitmap and leaving the canvas blank on an aspect change. -->
   <canvas
     ref="canvasRef"
-    :width="dims.width"
-    :height="dims.height"
     :style="{
       maxWidth: '100%',
-      maxHeight: 'calc(100vh - 160px)',
+      maxHeight: 'var(--frame-max-h)',
       width: 'auto',
       height: 'auto',
       aspectRatio: dims.width + '/' + dims.height,

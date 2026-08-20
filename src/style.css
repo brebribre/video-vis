@@ -6,6 +6,11 @@
   --text-muted: #888;
   --accent: #4f8ff7;
   --accent-hover: #3a7ae0;
+
+  /* Height budget for the preview frame: viewport minus the controls below it.
+     Single source of truth — AnimatedChart caps the canvas with it, and App.vue
+     derives the frame width from it to reserve room for Instagram feed chrome. */
+  --frame-max-h: calc(100vh - 240px);
 }
 
 * {
