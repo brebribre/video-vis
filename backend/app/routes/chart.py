@@ -17,8 +17,11 @@ from pydantic import BaseModel, Field
 from ..canvas.store import CanvasStore
 from ..config import RUNS_DIR, get_settings
 from ..llm.anthropic_client import NoCredentials
+from ..pipeline.compose import ComposeFailed, run_compose
 from ..pipeline.research import Budget, run_research
 from ..schemas import AspectRatio
+
+NEWLINE = chr(10)
 
 router = APIRouter()
 
@@ -38,6 +41,7 @@ def _generate(request: GenerateRequest, run_id: str) -> Iterator[str]:
     store = CanvasStore(run_id, RUNS_DIR)
     yield _sse("run", {"run_id": run_id})
 
+    summary: list[str] = []
     try:
         for message in run_research(
             request.topic,
@@ -46,7 +50,25 @@ def _generate(request: GenerateRequest, run_id: str) -> Iterator[str]:
             settings=get_settings(),
             budget=Budget(),
         ):
+            if message["event"] == "token":
+                # The researcher's closing prose gives compose context the raw
+                # table cannot — which series moved, what could not be found.
+                summary.append(str(message["data"].get("text", "")))
             yield _sse(message["event"], message["data"])
+
+        for message in run_compose(
+            request.topic,
+            request.language,
+            store=store,
+            aspect_ratio=request.aspect_ratio,
+            animation_duration=request.animation_duration,
+            research_summary=NEWLINE.join(summary[-2:]),
+            settings=get_settings(),
+        ):
+            yield _sse(message["event"], message["data"])
+    except ComposeFailed as exc:
+        yield _sse("error", {"message": str(exc), "retryable": False})
+        return
     except NoCredentials:
         yield _sse(
             "error",
@@ -59,7 +81,6 @@ def _generate(request: GenerateRequest, run_id: str) -> Iterator[str]:
         yield _sse("error", {"message": f"{type(exc).__name__}: {exc}", "retryable": True})
         return
 
-    # Stage 3 (compose) lands in Phase 4; until then the run ends after research.
     yield _sse("done", {})
 
 

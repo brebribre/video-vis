@@ -1,4 +1,4 @@
-"""SSE endpoint shape (§5), with the pipeline stubbed out."""
+"""SSE endpoint shape (§5), with both pipeline stages stubbed out."""
 
 from __future__ import annotations
 
@@ -8,9 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.pipeline.compose import ComposeFailed
 from app.routes import chart
 
 client = TestClient(app)
+
+CONFIG_EVENT = {"event": "config", "data": {"config": {"title": "t", "series": []}}}
 
 
 def parse_sse(body: str) -> list[tuple[str, str]]:
@@ -26,53 +29,105 @@ def parse_sse(body: str) -> list[tuple[str, str]]:
 
 
 @pytest.fixture
-def fake_research(monkeypatch):
-    def install(events: list[dict[str, Any]] | Exception):
-        def fake(*_args, **_kwargs) -> Iterator[dict[str, Any]]:
-            if isinstance(events, Exception):
-                raise events
-            yield from events
+def pipeline(monkeypatch):
+    """Stub both stages. Either may be a list of events or an exception."""
 
-        monkeypatch.setattr(chart, "run_research", fake)
+    def install(research: Any = None, compose: Any = None):
+        def make(events: Any):
+            def fake(*_args, **_kwargs) -> Iterator[dict[str, Any]]:
+                if isinstance(events, Exception):
+                    raise events
+                yield from (events or [])
+
+            return fake
+
+        monkeypatch.setattr(chart, "run_research", make(research))
+        monkeypatch.setattr(chart, "run_compose", make(compose))
 
     return install
 
 
-def test_streams_events_as_server_sent_events(fake_research):
-    fake_research(
-        [
+def test_streams_both_stages_as_server_sent_events(pipeline):
+    pipeline(
+        research=[
             {"event": "stage", "data": {"name": "research", "status": "start"}},
             {"event": "canvas", "data": {"rows": 2}},
-        ]
+        ],
+        compose=[CONFIG_EVENT],
     )
     response = client.post("/api/chart/generate", json={"topic": "x"})
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     names = [name for name, _ in parse_sse(response.text)]
-    assert names == ["run", "stage", "canvas", "done"]
+    assert names == ["run", "stage", "canvas", "config", "done"]
 
 
-def test_the_run_id_comes_first_so_the_canvas_can_be_fetched(fake_research):
-    fake_research([])
+def test_the_run_id_comes_first_so_the_canvas_can_be_fetched(pipeline):
+    pipeline()
     events = parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text)
     assert events[0][0] == "run"
     assert "run_id" in events[0][1]
 
 
-def test_a_pipeline_failure_becomes_an_error_event_not_a_dropped_stream(fake_research):
+def test_research_prose_is_passed_to_compose(monkeypatch):
+    # The closing summary tells compose which series moved and what could not be
+    # found — context the raw table does not carry.
+    seen: dict[str, Any] = {}
+
+    def fake_research(*_a, **_k):
+        yield {"event": "token", "data": {"text": "BYD overtook Tesla in 2023."}}
+
+    def fake_compose(*_a, **kwargs):
+        seen.update(kwargs)
+        yield CONFIG_EVENT
+
+    monkeypatch.setattr(chart, "run_research", fake_research)
+    monkeypatch.setattr(chart, "run_compose", fake_compose)
+    client.post("/api/chart/generate", json={"topic": "x"})
+
+    assert "BYD overtook Tesla" in seen["research_summary"]
+
+
+def test_request_settings_reach_compose(monkeypatch):
+    seen: dict[str, Any] = {}
+
+    def fake_compose(*_a, **kwargs):
+        seen.update(kwargs)
+        yield CONFIG_EVENT
+
+    monkeypatch.setattr(chart, "run_research", lambda *a, **k: iter(()))
+    monkeypatch.setattr(chart, "run_compose", fake_compose)
+    client.post(
+        "/api/chart/generate",
+        json={"topic": "x", "aspect_ratio": "4:5", "animation_duration": 12},
+    )
+
+    assert seen["aspect_ratio"] == "4:5"
+    assert seen["animation_duration"] == 12
+
+
+def test_a_pipeline_failure_becomes_an_error_event_not_a_dropped_stream(pipeline):
     # Raising mid-stream would leave the client hanging on a half-open response
     # with no way to tell a crash from a slow search.
-    fake_research(RuntimeError("search exploded"))
-    body = client.post("/api/chart/generate", json={"topic": "x"}).text
-    events = dict(parse_sse(body))
+    pipeline(research=RuntimeError("search exploded"))
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
     assert "error" in events
     assert "search exploded" in events["error"]
     assert "done" not in events, "a failed run must not also report success"
 
 
-def test_buffering_is_disabled_so_events_arrive_as_they_happen(fake_research):
-    fake_research([])
+def test_an_unchartable_canvas_reports_a_non_retryable_error(pipeline):
+    # Retrying will not conjure data that research could not find.
+    pipeline(compose=ComposeFailed("the canvas holds no usable rows"))
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
+    assert "no usable rows" in events["error"]
+    assert '"retryable": false' in events["error"]
+    assert "done" not in events
+
+
+def test_buffering_is_disabled_so_events_arrive_as_they_happen(pipeline):
+    pipeline()
     response = client.post("/api/chart/generate", json={"topic": "x"})
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"

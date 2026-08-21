@@ -443,11 +443,16 @@ series, 2023–2025 complete, **5 distinct sources**, `cited_text` and
 `published_at` on every row, mixed units (`USD_millions` + `USD_billions`)
 normalised correctly, zero fabricated URLs.
 
-### Phase 4 — Stage 3 compose ✅ acceptance: valid ChartConfig, captions in range
-- [ ] `build_chart` strict tool
-- [ ] Server-side caption clamping + overlap rejection
-- [ ] Language-aware `numberSuffixes` selection
-- [ ] Finalisation: canvas → `Series[]`
+### Phase 4 — Stage 3 compose ✅ **done** — verified on a live canvas
+- [x] `build_chart` strict tool, forced via `tool_choice`
+- [x] Server-side caption clamping, trimming and overlap rejection
+- [x] Language-aware `numberSuffixes` selection
+- [x] Finalisation: canvas → `Series[]`
+- [x] Currency cleared when the data is not money
+- [x] **Standing per period computed in Python** — the model read values
+      correctly but inverted the comparison ("Tesla leads with 1.31M vs BYD's
+      1.86M"). Ranking is arithmetic, so it moved to Python like units did.
+- [x] Config key set pinned against `DataInput.vue` by test
 
 ### Phase 5 — Widget ✅ acceptance: end-to-end topic → animated chart
 - [ ] `AssistantWidget.vue` + SSE client
