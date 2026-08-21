@@ -338,3 +338,121 @@ def test_finalize_serialises_to_the_camelcase_the_renderer_expects():
     dumped = series[0].model_dump(by_alias=True)
     assert set(dumped) == {"name", "color", "data", "image"}
     assert set(dumped["data"][0]) == {"time", "label", "value"}
+
+
+# --- §4.3 target-driven gaps ----------------------------------------------
+
+
+def test_without_a_target_an_absent_series_is_invisible():
+    # This is the failure the target exists to fix: the report compares recorded
+    # data against itself, so a series never added is never reported missing and
+    # the loop concludes it is finished.
+    store = store_with_urls()
+    store.append_rows([row(series="OpenAI", period_label="2024")])
+    report = store.gap_report()
+    assert report["missing"] == []
+    assert report["target"] is None
+
+
+def test_a_target_reports_a_series_that_has_no_data_at_all():
+    store = store_with_urls()
+    store.set_target(["OpenAI", "Anthropic"], "2023", "2025")
+    store.append_rows(
+        [
+            row(series="OpenAI", period_label="2023"),
+            row(series="OpenAI", period_label="2024"),
+            row(series="OpenAI", period_label="2025"),
+        ]
+    )
+    [gap] = store.gap_report()["missing"]
+    assert gap["series"] == "Anthropic"
+    assert gap["missing_periods"] == ["2023", "2024", "2025"]
+    assert gap["has_no_data"] is True
+
+
+def test_a_target_reports_periods_before_a_series_first_row():
+    # Without a target this is legitimate late-start data (§9.1) and not a gap.
+    # With one, the run was asked for 2023, so it is worth chasing.
+    store = store_with_urls()
+    store.set_target(["Anthropic"], "2023", "2025")
+    store.append_rows(
+        [
+            row(series="Anthropic", period_label="2024"),
+            row(series="Anthropic", period_label="2025"),
+        ]
+    )
+    [gap] = store.gap_report()["missing"]
+    assert gap["missing_periods"] == ["2023"]
+    assert gap["has_no_data"] is False
+
+
+def test_a_met_target_reports_no_gaps():
+    store = store_with_urls()
+    store.set_target(["OpenAI"], "2024", "2025")
+    store.append_rows(
+        [row(series="OpenAI", period_label="2024"), row(series="OpenAI", period_label="2025")]
+    )
+    assert store.gap_report()["missing"] == []
+
+
+def test_series_found_off_target_are_still_reported():
+    store = store_with_urls()
+    store.set_target(["OpenAI"], "2023", "2024")
+    store.append_rows(
+        [
+            row(series="OpenAI", period_label="2023"),
+            row(series="OpenAI", period_label="2024"),
+            row(series="Google", period_label="2023"),
+            row(series="Google", period_label="2025"),
+        ]
+    )
+    [gap] = store.gap_report()["missing"]
+    assert gap["series"] == "Google"
+    assert gap["missing_periods"] == ["2024"]
+    assert gap["off_target"] is True
+
+
+def test_the_target_range_drives_the_reported_range():
+    store = store_with_urls()
+    store.set_target(["OpenAI"], "2020", "2025")
+    store.append_rows([row(series="OpenAI", period_label="2024")])
+    assert store.gap_report()["range"] == {
+        "start": "2020",
+        "end": "2025",
+        "granularity": "year",
+    }
+
+
+def test_a_target_needs_readable_periods():
+    store = store_with_urls()
+    result = store.set_target(["OpenAI"], "a while back", "2025")
+    assert not result.accepted
+    assert store.target is None
+
+
+def test_a_target_needs_at_least_one_series():
+    assert not store_with_urls().set_target([], "2023", "2025").accepted
+
+
+def test_a_backwards_target_is_rejected():
+    result = store_with_urls().set_target(["OpenAI"], "2025", "2023")
+    assert not result.accepted
+    assert "after" in result.reason
+
+
+def test_a_quarterly_target_expands_by_quarter():
+    store = store_with_urls()
+    store.set_target(["OpenAI"], "Q1 2025", "Q4 2025")
+    [gap] = store.gap_report()["missing"]
+    # Quarters anchor to their starting month and step by three — expanding
+    # monthly would demand 2025-02 and 2025-03, which no quarterly source has.
+    assert gap["missing_periods"] == ["2025-01", "2025-04", "2025-07", "2025-10"]
+
+
+def test_finalize_still_refuses_to_backfill_an_unmet_target():
+    # The target drives *research*; it must not invent data at finalisation.
+    store = store_with_urls()
+    store.set_target(["OpenAI"], "2020", "2025")
+    store.append_rows([row(series="OpenAI", period_label="2024")])
+    series, _, _ = store.finalize()
+    assert len(series[0].data) == 1

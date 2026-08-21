@@ -55,6 +55,33 @@ _ROW_PROPERTIES: dict[str, Any] = {
 
 CANVAS_TOOLS: list[dict[str, Any]] = [
     {
+        "name": "canvas_set_target",
+        "description": (
+            "Declare what this run is trying to collect: which series, and over "
+            "which period range. Call this ONCE, early, as soon as you know what "
+            "the topic needs — before searching. Until you do, the gap report can "
+            "only compare what you have recorded against itself, so a series you "
+            "have not started is not reported as missing and you may stop early "
+            "believing the work is done."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "series": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Every entity to chart, e.g. ['OpenAI', 'Anthropic'].",
+                },
+                "start_period": {
+                    "type": "string",
+                    "description": "Earliest period wanted, e.g. '2023' or 'Q1 2024'.",
+                },
+                "end_period": {"type": "string", "description": "Latest period wanted."},
+            },
+            "required": ["series", "start_period", "end_period"],
+        },
+    },
+    {
         "name": "canvas_read",
         "description": (
             "Read the data canvas and its gap report. Call this FIRST, and again "
@@ -134,6 +161,18 @@ CANVAS_TOOL_NAMES = frozenset(tool["name"] for tool in CANVAS_TOOLS)
 def dispatch(store: CanvasStore, name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
     """Execute one canvas tool call. Never raises — errors are returned to the agent."""
     try:
+        if name == "canvas_set_target":
+            result = store.set_target(
+                tool_input.get("series") or [],
+                str(tool_input.get("start_period") or ""),
+                str(tool_input.get("end_period") or ""),
+            )
+            return {
+                "accepted": result.accepted,
+                "reason": result.reason,
+                "gap_report": store.gap_report(),
+            }
+
         if name == "canvas_read":
             return store.read(
                 series=tool_input.get("series") or None,

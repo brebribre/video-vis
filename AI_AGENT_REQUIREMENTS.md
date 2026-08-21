@@ -155,6 +155,7 @@ Custom (client-side) tools, executed by FastAPI against the run's table:
 
 | Tool | Purpose |
 |---|---|
+| `canvas_set_target(series[], start, end)` | Declare what the run is collecting. Called once, early — see §4.3. |
 | `canvas_append_rows(rows[])` | Add observations. Returns per-row accept/reject + reason. |
 | `canvas_read(series?, status?)` | Return the table **plus a gap report** (§4.3). |
 | `canvas_revise_row(row_id, ...)` | Correct a row after a better source turns up. |
@@ -181,10 +182,11 @@ tools = [
 
 The loop the agent is prompted to run:
 
-1. `canvas_read` → see what exists and what is missing
-2. Search / fetch for a specific gap
-3. `canvas_append_rows` with what the article actually states
-4. Repeat until the gap report is empty or remaining gaps are declared unavailable
+1. `canvas_read` → see what exists
+2. `canvas_set_target` → declare the series and period range the topic needs
+3. Search / fetch for a specific gap
+4. `canvas_append_rows` with what the article actually states
+5. Repeat from 3 until the gap report is empty or the remainder is unavailable
 
 **Implementation notes:**
 
@@ -230,7 +232,22 @@ evidence than anything the model retypes.
 
 ### 4.3 The gap report
 
-What makes the loop converge. On every `canvas_read`, Python computes:
+What makes the loop converge — and it only works if it knows what "done" means.
+
+**Without a declared target it can only compare recorded data against itself**, so a
+series the agent never adds is never reported missing and the loop concludes it has
+finished while most of the request is unmet. `canvas_set_target` fixes that: gaps are
+measured against the series and range that were actually asked for, and a series with no
+rows at all comes back flagged `has_no_data`.
+
+Two things this deliberately does *not* do:
+
+- It is a **research-time** signal, not a finalisation rule. A period still missing at the
+  end is not an error — §9.1 still governs, and nothing is ever back-filled.
+- Series discovered along the way that were not in the target are still reported (marked
+  `off_target`), using their own coverage rather than the target range.
+
+On every `canvas_read`, Python computes:
 
 - The union period range across all series (per §9.1)
 - Per series, which periods within its own coverage are missing
@@ -500,13 +517,7 @@ evidence behind any chart — and what would make a future provider switch cheap
 2. **Series icons** — `Series.image` (the endpoint logo) has no automatic source. Leave
    empty, or attempt favicon lookup from the cited domain?
 3. **Rate limits** — single-user local, or deployed and shared?
-4. **The gap report cannot see a series that was never added.** It compares what is
-   recorded against itself, so if the model never records Anthropic at all, nothing is
-   reported as missing and the loop believes it is done. It worked on the live run because
-   the model inferred both series from the topic — but that is the model's judgement, not
-   a guarantee. Fix: let the model declare the target series and period range once
-   (`canvas_set_target`), and have the gap report measure against that instead.
-5. **Canvas reuse across runs** — should a new topic start empty, or can a user re-open a
+4. **Canvas reuse across runs** — should a new topic start empty, or can a user re-open a
    previous run's canvas and extend it? Affects whether `run_id` is user-visible.
 
 ---

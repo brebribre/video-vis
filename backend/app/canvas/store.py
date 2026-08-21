@@ -86,6 +86,29 @@ class Row:
 
 
 @dataclass
+class Target:
+    """What the run is *trying* to collect, declared by the agent (§4.3).
+
+    Without this the gap report can only compare recorded data against itself,
+    so a series the agent never adds is never reported missing and the loop
+    concludes it is finished while most of the request is unmet.
+    """
+
+    series: list[str]
+    start: derive.Period
+    end: derive.Period
+    granularity: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "series": list(self.series),
+            "start": self.start.iso,
+            "end": self.end.iso,
+            "granularity": self.granularity,
+        }
+
+
+@dataclass
 class RowResult:
     """Per-row outcome handed straight back to the agent as a tool result."""
 
@@ -104,6 +127,7 @@ class CanvasStore:
         self._rows: dict[str, Row] = {}
         self._allowed_urls: set[str] = set()
         self._ids = itertools.count(1)
+        self._target: Target | None = None
 
     # ---- retrieved-URL set (§4.2) ---------------------------------------
 
@@ -124,6 +148,43 @@ class CanvasStore:
     @property
     def allowed_urls(self) -> set[str]:
         return set(self._allowed_urls)
+
+    # ---- target (§4.3) ---------------------------------------------------
+
+    @property
+    def target(self) -> Target | None:
+        return self._target
+
+    def set_target(
+        self, series: Iterable[str], start_period: str, end_period: str
+    ) -> RowResult:
+        names = [str(s).strip() for s in series if str(s).strip()]
+        if not names:
+            return RowResult(False, reason="at least one series name is required")
+
+        start = derive.parse_period(str(start_period))
+        end = derive.parse_period(str(end_period))
+        if start is None or end is None:
+            return RowResult(
+                False,
+                reason=(
+                    "start_period and end_period must be readable, e.g. '2023' or "
+                    "'Q1 2024'."
+                ),
+            )
+        if start.sort_key > end.sort_key:
+            return RowResult(False, reason="start_period is after end_period")
+
+        # Expanding a quarterly target monthly would demand 2025-02, 2025-03 …
+        # which no quarterly source publishes, so the gap report would never clear.
+        if start.granularity == end.granularity:
+            granularity = start.granularity
+        elif "month" in {start.granularity, end.granularity}:
+            granularity = "month"
+        else:
+            granularity = "quarter"
+        self._target = Target(names, start, end, granularity)
+        return RowResult(True, reason=f"target set: {names} {start.iso}..{end.iso}")
 
     # ---- mutations -------------------------------------------------------
 
@@ -287,39 +348,96 @@ class CanvasStore:
     def gap_report(self) -> dict[str, Any]:
         """What the agent works against — this is what makes the loop converge.
 
-        A series is only expected to cover from *its own* first period to the
-        overall latest, so a late-starting series is not reported as missing the
-        early years (§9.1).
+        With a target set (§4.3) gaps are measured against what was *asked for*,
+        so a series with no rows at all is reported missing rather than silently
+        absent. Without one, it falls back to comparing recorded data against
+        itself, where a series is only expected to cover from its own first
+        period onwards.
+
+        Note this is a *research-time* signal, not a finalisation rule. A period
+        still missing at the end is not an error — §9.1 says absence is the
+        honest representation and nothing is ever back-filled.
         """
         usable = [r for r in self._rows.values() if r.status in {STATUS_OK, STATUS_CONFLICT}]
-        periods = [r.period for r in usable if r.period]
-        if not periods:
-            return {
-                "series": [],
-                "range": None,
-                "missing": [],
-                "conflicts": self._conflicts(),
-                "needs_attention": self._needs_attention(),
-            }
-
-        granularity = "year" if all(p.granularity == "year" for p in periods) else "month"
-        overall_end = max(periods, key=lambda p: p.sort_key)
 
         by_series: dict[str, list[derive.Period]] = {}
         for row in usable:
             if row.period:
                 by_series.setdefault(row.series, []).append(row.period)
 
-        missing: list[dict[str, Any]] = []
+        base = {
+            "target": self._target.as_dict() if self._target else None,
+            "conflicts": self._conflicts(),
+            "needs_attention": self._needs_attention(),
+        }
+
+        if self._target is not None:
+            expected = derive.expand_periods(
+                self._target.start, self._target.end, self._target.granularity  # type: ignore[arg-type]
+            )
+            missing: list[dict[str, Any]] = []
+            for name in self._target.series:
+                have = {p.iso for p in by_series.get(name, [])}
+                holes = [p.iso for p in expected if p.iso not in have]
+                if holes:
+                    missing.append(
+                        {
+                            "series": name,
+                            "missing_periods": holes,
+                            # Called out so the agent notices a series it has not
+                            # started at all, rather than reading it as a few holes.
+                            "has_no_data": not have,
+                        }
+                    )
+            # Series found along the way that were not part of the target are
+            # still reported, using their own coverage.
+            for name in sorted(set(by_series) - set(self._target.series)):
+                periods = by_series[name]
+                holes = [
+                    p.iso
+                    for p in derive.expand_periods(
+                        min(periods, key=lambda p: p.sort_key),
+                        max(periods, key=lambda p: p.sort_key),
+                        self._target.granularity,  # type: ignore[arg-type]
+                    )
+                    if p.iso not in {q.iso for q in periods}
+                ]
+                if holes:
+                    missing.append(
+                        {"series": name, "missing_periods": holes, "off_target": True}
+                    )
+            return {
+                **base,
+                "series": sorted(by_series),
+                "range": {
+                    "start": self._target.start.iso,
+                    "end": self._target.end.iso,
+                    "granularity": self._target.granularity,
+                },
+                "missing": missing,
+            }
+
+        periods = [p for ps in by_series.values() for p in ps]
+        if not periods:
+            return {**base, "series": [], "range": None, "missing": []}
+
+        granularity = "year" if all(p.granularity == "year" for p in periods) else "month"
+        overall_end = max(periods, key=lambda p: p.sort_key)
+
+        missing = []
         for name, series_periods in sorted(by_series.items()):
             have = {p.iso for p in series_periods}
-            start = min(series_periods, key=lambda p: p.sort_key)
-            expected = derive.expand_periods(start, overall_end, granularity)
-            holes = [p.iso for p in expected if p.iso not in have]
+            first = min(series_periods, key=lambda p: p.sort_key)
+            holes = [
+                p.iso
+                for p in derive.expand_periods(first, overall_end, granularity)  # type: ignore[arg-type]
+                if p.iso not in have
+            ]
             if holes:
                 missing.append({"series": name, "missing_periods": holes})
 
         return {
+            **base,
             "series": sorted(by_series),
             "range": {
                 "start": min(periods, key=lambda p: p.sort_key).iso,
@@ -327,8 +445,6 @@ class CanvasStore:
                 "granularity": granularity,
             },
             "missing": missing,
-            "conflicts": self._conflicts(),
-            "needs_attention": self._needs_attention(),
         }
 
     def _conflicts(self) -> list[dict[str, Any]]:

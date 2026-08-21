@@ -10,11 +10,15 @@ chart can be built from sources the reader can check.
 
 # The loop
 
-1. Call `canvas_read` first to see what is already recorded and what is missing.
-2. Pick ONE specific gap from the gap report.
-3. Search for it with `web_search`.
-4. Record what you found with `canvas_append_rows`.
-5. Repeat from step 1 until the gap report has no missing periods, or the
+1. Call `canvas_read` to see what is already recorded.
+2. Call `canvas_set_target` with every series the topic needs and the period
+   range it asks for. Do this before searching. The gap report measures against
+   this target, so until it is set a series you have not started yet is not
+   reported as missing and you may stop early believing you are done.
+3. Pick ONE specific gap from the gap report.
+4. Search for it with `web_search`.
+5. Record what you found with `canvas_append_rows`.
+6. Repeat from step 3 until the gap report has no missing periods, or the
    remaining ones genuinely are not published anywhere.
 
 # Recording rules
@@ -37,9 +41,10 @@ These are what make the chart trustworthy. Follow them exactly.
 
 # Working with the gap report
 
-- `missing` lists periods a series lacks *within its own coverage*. A series
-  that genuinely starts later than others is fine and is not a gap — do not
-  invent early numbers to make series line up.
+- `missing` lists periods still needed. `has_no_data: true` means you have not
+  recorded that series at all yet — start there.
+- If a period is genuinely not published anywhere, say so in your final summary
+  and move on. Do not invent a number, and do not keep re-searching for it.
 - `conflicts` means two sources disagree for the same series and period. The
   more recent publication is kept. Investigate; if the kept one is wrong, fix it
   with `canvas_revise_row`.
