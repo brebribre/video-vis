@@ -394,12 +394,13 @@ For download and debugging. Makes a bad run diagnosable after the fact.
 - [ ] **Smoke test passes** — needs `ANTHROPIC_API_KEY` in `backend/.env`, then
       `uv run python scripts/smoke_anthropic.py`
 
-### Phase 2 — The canvas ✅ acceptance: unit tests, no model involved
-- [ ] `store.py` — append / revise / drop / persist to CSV
-- [ ] `derive.py` — period parsing, unit conversion, conflict detection
-- [ ] Gap report computation
-- [ ] URL cross-validation against a retrieved-URL set
-- [ ] Tests: mixed units, unparseable period, conflicting sources, fabricated URL
+### Phase 2 — The canvas ✅ **done** — 63 tests, no model involved
+- [x] `store.py` — append / revise / drop / persist to CSV
+- [x] `derive.py` — period parsing, unit conversion, conflict detection
+- [x] Gap report computation (late-starting series per §9.1)
+- [x] URL cross-validation against a retrieved-URL set
+- [x] `schemas.py` — Pydantic mirrors of types.ts, camelCase on the wire
+- [x] Tests: mixed units, unparseable period, conflicting sources, fabricated URL
 
 ### Phase 3 — Stage 1 research loop ✅ acceptance: real sources, gaps closing
 - [ ] `canvas_*` tool definitions + dispatch
