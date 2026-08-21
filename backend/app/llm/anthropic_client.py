@@ -147,6 +147,18 @@ def search_errors(response: Any) -> list[str]:
     return errors
 
 
+def container_id(response: Any) -> str | None:
+    """Container backing the server tools, if this response created one.
+
+    The _20260209 web tools run dynamic filtering through code execution, so a
+    response can carry pending container-backed tool uses. Every follow-up
+    request in that conversation must pass the container back or the API
+    rejects it with "container_id is required".
+    """
+    container = getattr(response, "container", None)
+    return getattr(container, "id", None) if container is not None else None
+
+
 def message_text(response: Any) -> str:
     return "".join(
         getattr(block, "text", "")

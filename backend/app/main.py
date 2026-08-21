@@ -1,7 +1,7 @@
 """FastAPI application entry point.
 
-Phase 1 is the skeleton: CORS for the Vite dev server and a health endpoint.
-The research pipeline (§4) and the SSE chart endpoint (§5) land in later phases.
+CORS for the Vite dev server, a health endpoint, and the SSE chart endpoint
+that drives the research loop (§4.1) and serves per-run canvases (§5).
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routes import health
+from .routes import chart, health
 
 app = FastAPI(title="video-vis AI chart agent", version="0.1.0")
 
@@ -23,3 +23,4 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(chart.router, prefix="/api")
