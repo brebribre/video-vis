@@ -393,19 +393,21 @@ Roughly **15× cheaper input, ~20× cheaper output** — the reason for the swit
 ## 8. Phases
 
 ### Phase 0 — Restructure ✅ acceptance: app still runs
-- [ ] `git mv` frontend files into `/frontend` (`src`, `public`, `index.html`,
+- [x] `git mv` frontend files into `/frontend` (`src`, `public`, `index.html`,
       `package.json`, `package-lock.json`, `vite.config.ts`, `tsconfig*.json`)
-- [ ] Update `.claude/launch.json` (cwd + port 5175 stays)
-- [ ] `npm run build` passes from `/frontend`; dev server serves the chart as before
+- [x] Update `.claude/launch.json` (cwd + port 5175 stays)
+- [x] `npm run build` passes from `/frontend`; dev server serves the chart as before
 
 ### Phase 1 — Backend skeleton ✅ acceptance: `/api/health` returns ok
-- [ ] `uv init` in `/backend`, add `fastapi`, `uvicorn[standard]`, `dashscope`, `pydantic`
-- [ ] `main.py` with CORS for the Vite origin
-- [ ] Vite proxy `/api` → `http://localhost:8000`
-- [ ] `.env.example`; **`.env` and `.runs/` must be gitignored**
-- [ ] **Smoke test**: one DashScope native call with `enable_search` + `enable_source`;
-      assert `search_info.search_results` is populated. Confirms region + model + key
-      before anything is built on top.
+- [x] `uv init` in `/backend`, add `fastapi`, `uvicorn[standard]`, `dashscope`, `pydantic`
+- [x] `main.py` with CORS for the Vite origin
+- [x] Vite proxy `/api` → `http://localhost:8000`
+- [x] `.env.example`; **`.env` and `.runs/` must be gitignored**
+- [x] **Smoke test**: `backend/scripts/smoke_dashscope.py` — one DashScope native call
+      with `enable_search` + `enable_source`; asserts `search_info.search_results` is
+      populated. Confirms region + model + key before anything is built on top.
+      ⚠️ Written and runnable, but **not yet executed against a live key** — run it
+      before starting Phase 3.
 
 ### Phase 2 — The canvas ✅ acceptance: unit tests, no model involved
 - [ ] `store.py` — append / revise / drop / persist to CSV
