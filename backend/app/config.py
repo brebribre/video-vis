@@ -1,6 +1,6 @@
 """Runtime configuration, read from the environment (or backend/.env).
 
-The DashScope API key lives here and nowhere else — it must never reach the
+The Anthropic API key lives here and nowhere else — it must never reach the
 browser (§3 of AI_AGENT_REQUIREMENTS.md).
 """
 
@@ -14,11 +14,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 RUNS_DIR = BACKEND_DIR / ".runs"
 
-# DashScope is region-scoped and model availability differs per region (§1.2).
-DASHSCOPE_ENDPOINTS = {
-    "intl": "https://dashscope-intl.aliyuncs.com/api/v1",
-    "cn": "https://dashscope.aliyuncs.com/api/v1",
-}
+# Models that support the _20260209 server-tool variants (web search + web fetch
+# with dynamic filtering). Older models fall back to basic web_search_20250305,
+# which this app does not currently handle — see §11.
+MODELS_WITH_MODERN_SEARCH = frozenset(
+    {
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+    }
+)
 
 
 class Settings(BaseSettings):
@@ -28,24 +35,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    dashscope_api_key: str = ""
-    # "intl" (dashscope-intl.aliyuncs.com) or "cn" (dashscope.aliyuncs.com).
-    dashscope_region: str = "intl"
-    # Verify availability in the target region before pinning (§1.2).
-    dashscope_model: str = "qwen3.7-plus"
+    anthropic_api_key: str = ""
+    # Sonnet 5 supports web_search_20260209 and is materially cheaper than Opus
+    # for a loop that resends its conversation every iteration (§7).
+    anthropic_model: str = "claude-sonnet-5"
+    # low | medium | high | xhigh | max — goes inside output_config, not top level.
+    anthropic_effort: str = "high"
 
     # Vite dev server origins allowed to call the API.
     cors_origins: str = "http://localhost:5175,http://127.0.0.1:5175"
 
     @property
-    def base_url(self) -> str:
-        try:
-            return DASHSCOPE_ENDPOINTS[self.dashscope_region]
-        except KeyError:
-            raise ValueError(
-                f"DASHSCOPE_REGION must be one of {sorted(DASHSCOPE_ENDPOINTS)}, "
-                f"got {self.dashscope_region!r}"
-            ) from None
+    def supports_modern_search(self) -> bool:
+        return self.anthropic_model in MODELS_WITH_MODERN_SEARCH
 
     @property
     def cors_origin_list(self) -> list[str]:
