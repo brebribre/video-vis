@@ -20,11 +20,6 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 const dims = computed(() => ASPECT_DIMENSIONS[props.config.aspectRatio])
 
-const isPortrait = computed(() => {
-  const r = props.config.aspectRatio
-  return r === '4:5' || r === '9:16'
-})
-
 // Scale factor relative to a 1280×720 baseline, multiplied by user-controlled size
 const textScale = computed(() => {
   const { width, height } = dims.value
@@ -45,36 +40,9 @@ const safeInset = computed(() => {
   }
 })
 
-// The drawable area once the platform's chrome is excluded
-const contentSize = computed(() => {
-  const { width, height } = dims.value
-  const s = safeInset.value
-  return { width: width - s.left - s.right, height: height - s.top - s.bottom }
-})
-
-// Portrait formats get extra vertical padding for title/subtitle
-const PADDING = computed(() => {
-  const s = textScale.value
-  const r = props.config.aspectRatio
-  // For 9:16 reels, keep a 4:5 composition centered vertically, then pad top/bottom.
-  // This preserves portrait positioning while fitting reel output dimensions.
-  if (r === '9:16') {
-    // Measured against the content box, not the raw frame — otherwise a safe-zone
-    // inset plus the full-frame extra padding can exceed the available height.
-    const { width, height } = contentSize.value
-    const targetPortraitHeight = width * (5 / 4) // 4:5 frame height for this width
-    const extraVerticalPad = Math.max(0, Math.round((height - targetPortraitHeight) / 2))
-    return {
-      top: Math.round(280 * s) + extraVerticalPad,
-      right: Math.round(220 * s),
-      bottom: Math.round(220 * s) + extraVerticalPad,
-      left: Math.round(180 * s),
-    }
-  }
-  return isPortrait.value
-    ? { top: Math.round(280 * s), right: Math.round(220 * s), bottom: Math.round(220 * s), left: Math.round(180 * s) }
-    : { top: Math.round(200 * s), right: Math.round(230 * s), bottom: Math.round(180 * s), left: Math.round(180 * s) }
-})
+// Note: the plot box is no longer derived from fixed padding constants. draw()
+// sizes it from the measured furniture (title block, axis labels, footer) so it
+// fills as much of the content box as possible — see `furniture` in draw().
 const AXIS_LERP_SPEED = 0.03 // per frame, controls smoothness
 const LEGEND_LERP_SPEED = 0.2
 const CONFETTI_DURATION_MS = 1800
@@ -367,7 +335,6 @@ function draw() {
   const visibleData = getVisibleData(series, props.progress)
   const sc = textScale.value
   const iconScale = ICON_SIZE_SCALE[props.config.iconSize ?? 'medium']
-  const PAD = PADDING.value
   // Anchored to the content box (frame minus the platform's safe-zone inset)
   const safe = safeInset.value
   const contentTop = safe.top
@@ -376,30 +343,46 @@ function draw() {
   const contentRight = width - safe.right
   const contentCenterX = (contentLeft + contentRight) / 2
 
-  // The frame padding and the safe-zone inset serve the same purpose — keeping
-  // the plot clear of the edges — so take whichever is larger rather than
-  // summing them, which would squeeze the plot to a fraction of the frame.
-  // With no safe zone this reduces to the original padding exactly.
+  // The plot fills the content box minus exactly the room its furniture needs,
+  // so the chart uses as much of the safe area as it can rather than sitting
+  // inside a fixed padding that was tuned for the full frame.
+  const titleSize = Math.round(42 * sc * titleFontScale())
+  const subtitleSize = Math.round(24 * sc * subtitleFontScale())
+  const axisLabelSize = Math.round(28 * sc)
+  const tickFontPx = Math.round(28 * sc)
+  const headFontPx = Math.round(30 * sc)
+
+  const titleTopMargin = Math.round(26 * sc)
+  const titleSubtitleGap = Math.round(8 * sc)
+  // Breathing room between the title block and the top of the plot
+  const subtitleTopGap = Math.round(88 * sc)
+  const hasSubtitle = !!props.config.subtitle
+  const titleBlockH = titleSize + (hasSubtitle ? titleSubtitleGap + subtitleSize : 0)
+
+  // Measured from the global extreme so the layout stays fixed during playback
+  const widestValue = Math.max(...series.flatMap(s => s.data.map(d => Math.abs(d.value))), 0)
+  ctx.font = `${tickFontPx}px Inter, sans-serif`
+  const yTickW = ctx.measureText(formatValue(widestValue)).width
+  ctx.font = `bold ${headFontPx}px Inter, sans-serif`
+  const headLabelW = ctx.measureText(formatValue(widestValue)).width
+
   // The end-ranking footer only draws on the final frame, but its space is
   // reserved for the whole animation so the layout doesn't jump at the end.
   const footerReserve = props.config.showEndRanking ? Math.round(270 * sc) : 0
-  const minFurniture = {
-    top: Math.round(170 * sc),    // title + subtitle block
-    right: Math.round(40 * sc),   // head room is reserved inside the plot
-    bottom: Math.round(100 * sc) + footerReserve, // x labels + "Designed By" block
-    left: Math.round(150 * sc),   // y tick labels + rotated y axis label
-  }
-  const effPad = {
-    top: Math.max(PAD.top - safe.top, minFurniture.top),
-    right: Math.max(PAD.right - safe.right, minFurniture.right),
-    bottom: Math.max(PAD.bottom - safe.bottom, minFurniture.bottom),
-    left: Math.max(PAD.left - safe.left, minFurniture.left),
+  const captionReserve = (props.config.captions?.length ?? 0) > 0 ? Math.round(130 * sc) : 0
+
+  const furniture = {
+    top: titleTopMargin + titleBlockH + subtitleTopGap,
+    right: Math.round(40 * sc), // head room is reserved inside the plot
+    bottom: Math.max(Math.round(80 * sc), captionReserve) + footerReserve,
+    left: Math.round(16 * sc) + axisLabelSize + Math.round(12 * sc)
+      + Math.ceil(yTickW) + Math.round(18 * sc),
   }
 
-  const chartLeft = contentLeft + effPad.left
-  const chartRight = contentRight - effPad.right
-  const chartTop = contentTop + effPad.top
-  const chartBottom = contentBottom - effPad.bottom
+  const chartLeft = contentLeft + furniture.left
+  const chartRight = contentRight - furniture.right
+  const chartTop = contentTop + furniture.top
+  const chartBottom = contentBottom - furniture.bottom
   const chartW = chartRight - chartLeft
   const chartH = chartBottom - chartTop
   if (chartW <= 0 || chartH <= 0) return
@@ -409,12 +392,8 @@ function draw() {
   // the plot box instead of spilling past its right edge.
   const headDotR = Math.round(7 * sc)
   const headMarkerR = Math.round(44 * sc * iconScale) / 2
-  ctx.font = `bold ${Math.round(30 * sc)}px Inter, sans-serif`
-  // Measured from the global extreme so the region stays fixed during playback
-  const widestValue = Math.max(...series.flatMap(s => s.data.map(d => Math.abs(d.value))), 0)
-  const headLabelW = ctx.measureText(formatValue(widestValue)).width
   const headRoom = headMarkerR + Math.round(12 * sc) + Math.ceil(headLabelW)
-  const vPad = Math.max(headMarkerR, Math.round(30 * sc * 0.62))
+  const vPad = Math.max(headMarkerR, Math.round(headFontPx * 0.62))
 
   const dataLeft = chartLeft + headMarkerR
   const dataRight = chartRight - headRoom
@@ -501,7 +480,6 @@ function draw() {
   }
 
   // Compute how many ticks actually fit given font size and chart dimensions
-  const tickFontPx = Math.round(28 * sc)
   const maxYTicks = Math.max(2, Math.floor(chartH / (tickFontPx * 2.5)))
 
   // Grid lines using display range
@@ -666,14 +644,10 @@ function draw() {
   ctx.restore() // un-clip the plot box
 
   // Title + subtitle
-  const titleScale = titleFontScale()
-  const subtitleScale = subtitleFontScale()
-  const titleSize = Math.round(42 * sc * titleScale)
-  const subtitleSize = Math.round(24 * sc * subtitleScale)
-  const axisLabelSize = Math.round(28 * sc)
-  const subtitleTopGap = Math.round(44 * sc)
-  const subtitleY = chartTop - subtitleSize - subtitleTopGap
-  const titleY = subtitleY - titleSize - Math.round(8 * sc)
+  // Anchored to the top of the content box; furniture.top above reserves
+  // exactly this block plus the gap down to the plot.
+  const titleY = contentTop + titleTopMargin
+  const subtitleY = titleY + titleSize + titleSubtitleGap
 
   ctx.fillStyle = '#e0e0e0'
   ctx.font = titleBoldFont(titleSize)

@@ -38,7 +38,7 @@ const chartFont = ref<ChartFont>('modern')
 const showEndRanking = ref(true)
 const aspectRatio = ref<AspectRatio>('9:16')
 const animationDuration = ref(5)
-const textSize = ref(1)
+const textSize = ref(0.7)
 
 const suffixPreset = ref('English')
 const suffixes = ref<NumberSuffixes>({ ...NUMBER_SUFFIX_PRESETS['English'] })

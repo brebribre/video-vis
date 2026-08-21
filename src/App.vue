@@ -21,7 +21,7 @@ const config = ref<ChartConfig>({
   chartFont: 'modern',
   showEndRanking: true,
   animationDuration: 5,
-  textSize: 1,
+  textSize: 0.7,
   numberSuffixes: { thousands: 'K', millions: 'M', billions: 'B' },
   captions: [],
 })
