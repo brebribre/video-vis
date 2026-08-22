@@ -555,15 +555,26 @@ evidence behind any chart — and what would make a future provider switch cheap
 
 ---
 
-## 10. Open questions
+## 10. Questions
 
-1. **Failure mode** — if research finds no usable numbers, fail loudly or return a
-   partial chart? Recommend failing loudly.
-2. **Series icons** — `Series.image` (the endpoint logo) has no automatic source. Leave
+### Settled
+
+1. **Failure mode — fail loudly.** Fewer than `MIN_POINTS_FOR_CHART` (2) usable
+   datapoints stops the pipeline; a single point is not a line, and a chart built from
+   one number misrepresents the research more than no chart does. The check runs in
+   `run_compose` *before* `llm.create`, so an unchartable run costs nothing. The user
+   gets `explain_unchartable()` — what was sought, how many rows were rejected and for
+   what reason, and a link to the canvas — not a bare "no data".
+2. **`run_id` is user-visible.** Shown in the widget for the whole run, and repeated on
+   the `error` event so the canvas stays downloadable when a run fails. Reuse of a
+   previous run's canvas is not built, but nothing precludes it: the canvas is durable
+   (§9.3) and `GET /api/runs/{run_id}/canvas.csv` already serves it by id.
+
+### Still open
+
+3. **Series icons** — `Series.image` (the endpoint logo) has no automatic source. Leave
    empty, or attempt favicon lookup from the cited domain?
-3. **Rate limits** — single-user local, or deployed and shared?
-4. **Canvas reuse across runs** — should a new topic start empty, or can a user re-open a
-   previous run's canvas and extend it? Affects whether `run_id` is user-visible.
+4. **Rate limits** — single-user local, or deployed and shared?
 
 ---
 

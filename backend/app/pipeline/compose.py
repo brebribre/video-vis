@@ -63,8 +63,50 @@ _SYMBOL_FOR_DIMENSION = {"currency": "$"}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
+# A single point is not a line. Below this there is nothing to animate, so the
+# run stops here rather than spending a compose call on it (§10.1).
+MIN_POINTS_FOR_CHART = 2
+
+
 class ComposeFailed(RuntimeError):
-    pass
+    """Raised before any API call when the canvas cannot make a chart."""
+
+
+def explain_unchartable(store: CanvasStore, points: int) -> str:
+    """Say what was found and why it is not enough, not just that it failed.
+
+    "No usable rows" on its own leaves the user with no idea whether the topic
+    was wrong, the sources were unusable, or something broke.
+    """
+    report = store.gap_report()
+    target = report.get("target")
+    attention = report.get("needs_attention") or []
+
+    if points == 0:
+        head = "The research finished without recording any usable datapoints."
+    else:
+        head = (
+            f"Only {points} usable datapoint was recorded — a line chart needs at "
+            f"least {MIN_POINTS_FOR_CHART}."
+        )
+
+    detail: list[str] = []
+    if target:
+        wanted = ", ".join(target["series"])
+        detail.append(f"Looking for {wanted} over {target['start']}–{target['end']}.")
+    if attention:
+        reasons = sorted({row["status"] for row in attention})
+        detail.append(
+            f"{len(attention)} row(s) were rejected: {', '.join(reasons)}."
+        )
+    if store.rows and not points:
+        detail.append("Every recorded row failed validation.")
+
+    tail = (
+        f"Try a more specific topic, or a period where the figures are published. "
+        f"The raw canvas for this run is at /api/runs/{store.run_id}/canvas.csv."
+    )
+    return " ".join([head, *detail, tail])
 
 
 def clean_text(value: object, *, limit: int) -> str:
@@ -114,10 +156,10 @@ def run_compose(
     yield {"event": "stage", "data": {"name": "compose", "status": "start"}}
 
     series, axis_mode, dimension = store.finalize()
-    if not series:
-        raise ComposeFailed(
-            "the canvas holds no usable rows, so there is nothing to chart"
-        )
+    points = sum(len(s.data) for s in series)
+    if points < MIN_POINTS_FOR_CHART:
+        # Raised before llm.create, so an unchartable run costs nothing.
+        raise ComposeFailed(explain_unchartable(store, points))
 
     response = llm.create(
         [

@@ -38,7 +38,7 @@ export type AgentEvent =
   | { type: 'sources'; sources: SourceRef[] }
   | { type: 'notice'; notice: Record<string, unknown> }
   | { type: 'config'; config: ChartConfig }
-  | { type: 'error'; message: string; retryable: boolean }
+  | { type: 'error'; message: string; retryable: boolean; runId?: string }
   | { type: 'done' }
 
 function toEvent(name: string, raw: string): AgentEvent | null {
@@ -64,7 +64,12 @@ function toEvent(name: string, raw: string): AgentEvent | null {
     case 'config':
       return { type: 'config', config: data.config as ChartConfig }
     case 'error':
-      return { type: 'error', message: data.message ?? 'unknown error', retryable: !!data.retryable }
+      return {
+        type: 'error',
+        message: data.message ?? 'unknown error',
+        retryable: !!data.retryable,
+        runId: data.run_id,
+      }
     case 'done':
       return { type: 'done' }
     default:

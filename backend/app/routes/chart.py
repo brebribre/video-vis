@@ -67,8 +67,11 @@ def _generate(request: GenerateRequest, run_id: str) -> Iterator[str]:
         ):
             yield _sse(message["event"], message["data"])
     except ComposeFailed as exc:
-        # Retrying will not conjure data that research could not find.
-        yield _sse("error", {"message": str(exc), "retryable": False})
+        # Retrying will not conjure data that research could not find. The run
+        # id goes out with it so the user can still download what *was* found.
+        yield _sse(
+            "error", {"message": str(exc), "retryable": False, "run_id": run_id}
+        )
         return
     except Exception as exc:  # noqa: BLE001 - the stream must always close cleanly
         # A raised exception mid-stream would leave the client hanging on a
@@ -76,7 +79,9 @@ def _generate(request: GenerateRequest, run_id: str) -> Iterator[str]:
         # `retryable` is classified per exception type: telling the user to
         # retry a 400 invites an identical failure at full cost.
         message, retryable = describe_error(exc)
-        yield _sse("error", {"message": message, "retryable": retryable})
+        yield _sse(
+            "error", {"message": message, "retryable": retryable, "run_id": run_id}
+        )
         return
 
     yield _sse("done", {})

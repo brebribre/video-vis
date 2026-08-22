@@ -96,6 +96,8 @@ async function run() {
           break
         case 'error':
           errorMessage.value = event.message
+          // A failed run still has a canvas worth inspecting.
+          if (event.runId) runId.value = event.runId
           break
       }
     }
@@ -160,7 +162,16 @@ onUnmounted(() => controller?.abort())
         Researching takes a few minutes — sources are checked as they are found.
       </p>
 
-      <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
+      <div v-if="errorMessage" class="error">
+        <div>{{ errorMessage }}</div>
+        <a v-if="runId" class="csv" :href="canvasCsvUrl(runId)" download>
+          Download what was found
+        </a>
+      </div>
+
+      <div v-if="runId" class="run-id">
+        run <code>{{ runId }}</code>
+      </div>
 
       <div v-if="canvas" class="canvas-summary">
         <div class="row">
@@ -286,6 +297,21 @@ onUnmounted(() => controller?.abort())
   border: 1px solid #f74f4f55;
   border-radius: 6px;
   padding: 8px 10px;
+}
+
+.run-id {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.run-id code {
+  font-family: 'Fira Code', monospace;
+  color: #999;
+}
+
+.error .csv {
+  display: block;
+  margin-top: 6px;
 }
 
 .canvas-summary {

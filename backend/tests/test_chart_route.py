@@ -198,3 +198,20 @@ def test_a_missing_key_is_reported_as_not_retryable(pipeline):
     events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
     assert "ANTHROPIC_API_KEY" in events["error"]
     assert '"retryable": false' in events["error"]
+
+
+# --- §10.2 run id is user visible -----------------------------------------
+
+
+def test_a_failed_run_still_reports_its_run_id(pipeline):
+    # The canvas is downloadable even when the chart could not be built, so the
+    # user can see what was and was not found.
+    pipeline(compose=ComposeFailed("nothing usable"))
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
+    assert "run_id" in events["error"]
+
+
+def test_an_api_failure_also_reports_its_run_id(pipeline):
+    pipeline(research=RuntimeError("boom"))
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
+    assert "run_id" in events["error"]

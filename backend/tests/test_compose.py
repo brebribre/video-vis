@@ -218,7 +218,7 @@ def test_allow_negative_follows_the_data_not_the_model(stub):
 
 def test_an_empty_canvas_fails_loudly(stub):
     stub.install(PROPOSAL)
-    with pytest.raises(ComposeFailed, match="nothing to chart"):
+    with pytest.raises(ComposeFailed, match="without recording any usable datapoints"):
         run(CanvasStore("empty"))
 
 
@@ -343,3 +343,73 @@ def test_model_strings_are_flattened_and_capped(stub):
     config = config_from(run(build_store()))
     assert config["title"] == "Tesla vs BYD"
     assert len(config["subtitle"]) == 160
+
+
+# --- §10.1 stop when nothing is usable ------------------------------------
+
+
+def unchartable(rows: int = 0) -> CanvasStore:
+    store = CanvasStore("run-xyz")
+    store.allow_urls([SEARCHED])
+    store.set_target(["OpenAI", "Anthropic"], "2023", "2025")
+    for i in range(rows):
+        store.append_rows(
+            [{"series": "OpenAI", "period_label": str(2023 + i), "raw_value": 1,
+              "raw_unit": "USD_billions", "source_url": SEARCHED}]
+        )
+    return store
+
+
+def test_an_empty_canvas_stops_before_any_api_call(stub):
+    calls: list[Any] = []
+    stub.install(PROPOSAL)
+    compose_module.llm.create = lambda *a, **k: calls.append(1)
+
+    with pytest.raises(ComposeFailed):
+        run(unchartable(0))
+    assert calls == [], "an unchartable run must not spend a compose call"
+
+
+def test_a_single_datapoint_is_not_a_chart(stub):
+    stub.install(PROPOSAL)
+    with pytest.raises(ComposeFailed, match="at least 2"):
+        run(unchartable(1))
+
+
+def test_two_datapoints_are_enough(stub):
+    stub.install(PROPOSAL)
+    assert config_from(run(unchartable(2)))["series"]
+
+
+def test_the_failure_says_what_was_being_looked_for(stub):
+    stub.install(PROPOSAL)
+    with pytest.raises(ComposeFailed) as err:
+        run(unchartable(0))
+    message = str(err.value)
+    assert "OpenAI, Anthropic" in message
+    assert "2023" in message and "2025" in message
+
+
+def test_the_failure_points_at_the_canvas_for_inspection(stub):
+    stub.install(PROPOSAL)
+    with pytest.raises(ComposeFailed) as err:
+        run(unchartable(0))
+    assert "/api/runs/run-xyz/canvas.csv" in str(err.value)
+
+
+def test_the_failure_reports_rejected_rows(stub):
+    # "No usable rows" alone leaves the user unable to tell a bad topic from a
+    # broken pipeline.
+    store = CanvasStore("run-abc")
+    store.allow_urls([SEARCHED])
+    store.append_rows([{"series": "OpenAI", "period_label": "2024", "raw_value": 1,
+                        "raw_unit": "USD_billions", "source_url": SEARCHED}])
+    # Reload without the URL set, so the row re-flags unverified (§4.2).
+    store._allowed_urls.clear()
+    store._recompute()
+
+    stub.install(PROPOSAL)
+    with pytest.raises(ComposeFailed) as err:
+        run(store)
+    assert "unverified_url" in str(err.value)
+    assert "failed validation" in str(err.value)
