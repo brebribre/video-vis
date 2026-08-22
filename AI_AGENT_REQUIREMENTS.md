@@ -376,7 +376,7 @@ scrubbed and length-capped before it reaches the renderer.
 | `canvas`  | `{"rows": n, "series": [...], "gaps": [...]}` | Live table state |
 | `sources` | `{"sources": [{"series","time","title","url","cited_text"}]}` | Per-datapoint citation list |
 | `config`  | `{"config": { ...ChartConfig }}` | Ready to hand to `onApply` |
-| `error`   | `{"message": "...", "retryable": bool}` | Show inline in the widget |
+| `error`   | `{"message": "...", "retryable": bool}` | `retryable` is classified per exception type — a 400 is never advertised as worth retrying |
 | `done`    | `{}` | Close the stream |
 
 Stream from the start — a research loop takes a while and a silent spinner reads as a hang.
@@ -422,9 +422,13 @@ For download and debugging. Makes a bad run diagnosable after the fact.
   Build them as module constants, never per-run.
 - Verify with `usage.cache_read_input_tokens`. Zero across repeated runs means a silent
   invalidator.
-- Consider **context editing** (`clear_tool_uses_20250919`) for long loops — old search
-  results can be cleared once their rows are in the canvas, since the canvas *is* the
-  durable state. This is the main lever on loop cost.
+- **Context editing is on** (`clear_tool_uses_20250919`, beta
+  `context-management-2025-06-27`): old search results are cleared once their rows are in
+  the canvas, since the canvas *is* the durable state (§9.3). Verified accepted by the API
+  alongside the server tools.
+- **Measured caching**: a repeated prefix reads **9,857 tokens from cache against 85
+  uncached** — effectively the whole system prompt plus tool definitions at 0.1x. This is
+  why the `canvas_*` schemas must stay byte-stable.
 - Cap `max_uses` on web search plus a per-run token budget so a bad topic can't run up a
   bill.
 
@@ -491,11 +495,16 @@ missing" is honest where "0 datapoints" alone would look like nothing is
 happening and a filled row count would look complete while a whole series is
 absent.
 
-### Phase 6 — Hardening
-- [ ] Per-run token budget + timeout
-- [ ] Context editing once rows are persisted
-- [ ] Typed error handling (`RateLimitError` → retryable, `APIStatusError` → not)
-- [ ] Prompt caching verified via `cache_read_input_tokens`
+### Phase 6 — Hardening ✅ **done** — verified live
+- [x] Per-run token budget **and wall-clock deadline** (`max_seconds`, default 600s)
+- [x] Context editing (`clear_tool_uses_20250919`) once rows are persisted
+- [x] Typed error handling — `retryable` is classified per exception type
+- [x] Prompt caching verified: **9,857 of ~9,942 input tokens read from cache**
+- [x] Elapsed time and cache reads reported on the closing `stage` event
+
+The iteration and token caps alone were not enough: a single turn has been
+measured at 100s+, so a run could stay open far longer than any user would wait.
+The deadline is checked before each turn, and stops with `stop_reason: timeout`.
 
 ---
 

@@ -33,6 +33,13 @@ def web_tools(max_uses: int = 8) -> list[dict[str, Any]]:
 MAX_CONTINUATIONS = 5
 
 
+# Context editing clears old tool results from the transcript. Safe here because
+# the canvas is the durable state (§9.3) — once a row is persisted, the search
+# result that produced it is no longer needed in context.
+CONTEXT_EDIT_BETA = "context-management-2025-06-27"
+CLEAR_TOOL_USES = {"edits": [{"type": "clear_tool_uses_20250919"}]}
+
+
 class NoCredentials(RuntimeError):
     pass
 
@@ -41,7 +48,35 @@ def get_client(settings: Settings | None = None) -> anthropic.Anthropic:
     settings = settings or get_settings()
     if not settings.anthropic_api_key:
         raise NoCredentials("ANTHROPIC_API_KEY is not set")
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    # The SDK already retries 408/409/429/5xx and connection errors with
+    # backoff, so no retry loop is hand-rolled on top of it.
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=3)
+
+
+def describe_error(exc: BaseException) -> tuple[str, bool]:
+    """A user-facing message plus whether retrying could plausibly help.
+
+    Marking everything retryable is worse than useless: it invites the user to
+    re-run a request that will fail identically, at full cost.
+    """
+    if isinstance(exc, NoCredentials):
+        return "ANTHROPIC_API_KEY is not set on the server.", False
+    if isinstance(exc, anthropic.AuthenticationError):
+        return "The server's Anthropic API key was rejected.", False
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return "The API key is not permitted to use this model.", False
+    if isinstance(exc, anthropic.NotFoundError):
+        return "The configured model does not exist.", False
+    if isinstance(exc, anthropic.BadRequestError):
+        # A malformed request fails the same way every time.
+        return f"The request was rejected: {exc}", False
+    if isinstance(exc, anthropic.RateLimitError):
+        return "Rate limited by the Anthropic API — try again shortly.", True
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Could not reach the Anthropic API.", True
+    if isinstance(exc, anthropic.APIStatusError):
+        return f"Anthropic API error {exc.status_code}.", exc.status_code >= 500
+    return f"{type(exc).__name__}: {exc}", False
 
 
 def create(
@@ -52,6 +87,7 @@ def create(
     tools: list[dict[str, Any]] | None = None,
     max_tokens: int = 16000,
     thinking: bool = True,
+    context_management: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:
     """One Messages call. Adaptive thinking must be set explicitly (§11)."""
@@ -72,6 +108,13 @@ def create(
     if tools is not None:
         params["tools"] = tools
 
+    if context_management is not None:
+        # Context editing is beta, so it needs the beta namespace and header.
+        return client.beta.messages.create(
+            betas=[CONTEXT_EDIT_BETA],
+            context_management=context_management,
+            **params,
+        )
     return client.messages.create(**params)
 
 

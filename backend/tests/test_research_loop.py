@@ -7,6 +7,7 @@ across messages degrades the model's tool use over time. Both are pinned.
 
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 from typing import Any
 
@@ -403,3 +404,62 @@ def test_the_container_stays_set_once_opened(spy):
     collect(store, spy)
     assert spy.calls[1]["container"] == "cntr_1"
     assert spy.calls[2]["container"] == "cntr_1"
+
+
+# --- §6 hardening ----------------------------------------------------------
+
+
+def test_the_wall_clock_deadline_stops_the_loop(spy, monkeypatch):
+    # A single turn has been measured at 100s+, so the iteration and token caps
+    # alone can leave a request open for a very long time.
+    # started, then the first check, then past the deadline forever. An
+    # exhausted iterator would raise StopIteration *inside* the generator,
+    # which Python converts to RuntimeError and hides the real assertion.
+    clock = itertools.chain([0.0, 0.0], itertools.repeat(999.0))
+    monkeypatch.setattr(research.time, "monotonic", lambda: next(clock))
+
+    store = CanvasStore("t")
+    spy.queue.extend([response("tool_use", [tool_use_block(f"t{i}", "canvas_read", {})]) for i in range(5)])
+    events = collect(store, spy, max_iterations=5)
+
+    assert len(spy.calls) == 1, "the deadline should stop the loop before the next call"
+    assert events_of(events, "stage")[-1]["stop_reason"] == "timeout"
+
+
+def test_old_tool_results_are_cleared_from_the_transcript(spy):
+    # The canvas is the durable state (§9.3), so a search result whose row is
+    # already persisted does not need to keep occupying context.
+    store = CanvasStore("t")
+    spy.queue.append(response("end_turn", [text_block("done")]))
+    collect(store, spy)
+
+    assert spy.calls[0]["context_management"] == {
+        "edits": [{"type": "clear_tool_uses_20250919"}]
+    }
+
+
+def test_context_editing_can_be_turned_off(spy):
+    store = CanvasStore("t")
+    spy.queue.append(response("end_turn", [text_block("done")]))
+    collect(store, spy, clear_old_tool_results=False)
+    assert "context_management" not in spy.calls[0]
+
+
+def test_the_run_reports_how_long_it_took(spy):
+    store = CanvasStore("t")
+    spy.queue.append(response("end_turn", [text_block("done")]))
+    events = collect(store, spy)
+    assert "elapsed_seconds" in events_of(events, "stage")[-1]
+
+
+def test_cache_reads_are_reported_so_caching_can_be_verified(spy):
+    # §7: zero cache reads across repeated runs means a silent invalidator, and
+    # the only way to notice is to surface the number.
+    store = CanvasStore("t")
+    resp = response("end_turn", [text_block("done")])
+    resp.usage = SimpleNamespace(
+        input_tokens=100, output_tokens=50, cache_read_input_tokens=4096
+    )
+    spy.queue.append(resp)
+    events = collect(store, spy)
+    assert events_of(events, "stage")[-1]["usage"]["cache_read_input_tokens"] == 4096

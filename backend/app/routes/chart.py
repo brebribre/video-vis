@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from ..canvas.store import CanvasStore
 from ..config import RUNS_DIR, get_settings
-from ..llm.anthropic_client import NoCredentials
+from ..llm.anthropic_client import describe_error
 from ..pipeline.compose import ComposeFailed, run_compose
 from ..pipeline.research import Budget, run_research
 from ..schemas import AspectRatio
@@ -67,18 +67,16 @@ def _generate(request: GenerateRequest, run_id: str) -> Iterator[str]:
         ):
             yield _sse(message["event"], message["data"])
     except ComposeFailed as exc:
+        # Retrying will not conjure data that research could not find.
         yield _sse("error", {"message": str(exc), "retryable": False})
-        return
-    except NoCredentials:
-        yield _sse(
-            "error",
-            {"message": "ANTHROPIC_API_KEY is not set on the server.", "retryable": False},
-        )
         return
     except Exception as exc:  # noqa: BLE001 - the stream must always close cleanly
         # A raised exception mid-stream would leave the client hanging on a
         # half-open response, so failures are delivered as an error event.
-        yield _sse("error", {"message": f"{type(exc).__name__}: {exc}", "retryable": True})
+        # `retryable` is classified per exception type: telling the user to
+        # retry a 400 invites an identical failure at full cost.
+        message, retryable = describe_error(exc)
+        yield _sse("error", {"message": message, "retryable": retryable})
         return
 
     yield _sse("done", {})

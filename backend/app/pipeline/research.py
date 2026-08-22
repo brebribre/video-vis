@@ -11,6 +11,7 @@ without HTTP.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, Iterator
 
@@ -31,6 +32,13 @@ class Budget:
     max_output_tokens: int = 16000
     # Total input+output across the run. None disables the ceiling.
     max_total_tokens: int | None = 600_000
+    # Wall clock. A single turn has been measured at 100s+, so the iteration and
+    # token caps alone can still leave a request open for a very long time.
+    # None disables the deadline.
+    max_seconds: float | None = 600.0
+    # Clear old tool results once their rows are in the canvas (§9.3). The
+    # transcript is disposable; the canvas is not.
+    clear_old_tool_results: bool = True
 
 
 @dataclass
@@ -107,8 +115,16 @@ def run_research(
     stop_reason = "unknown"
     container: str | None = None
 
+    started = time.monotonic()
+
     for _ in range(budget.max_iterations):
+        if budget.max_seconds is not None and time.monotonic() - started >= budget.max_seconds:
+            stop_reason = "timeout"
+            break
+
         extra: dict[str, Any] = {"container": container} if container else {}
+        if budget.clear_old_tool_results:
+            extra["context_management"] = llm.CLEAR_TOOL_USES
         response = llm.create(
             messages,
             settings=settings,
@@ -208,6 +224,7 @@ def run_research(
             "status": "done",
             "stop_reason": stop_reason,
             "rows": len(store.rows),
+            "elapsed_seconds": round(time.monotonic() - started, 1),
             "usage": {
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens,

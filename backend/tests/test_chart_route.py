@@ -156,3 +156,45 @@ def test_canvas_download_returns_the_csv(tmp_path, monkeypatch):
     response = client.get("/api/runs/abc123/canvas.csv")
     assert response.status_code == 200
     assert "OpenAI" in response.text
+
+
+# --- §6 typed error classification ----------------------------------------
+
+
+def test_a_bad_request_is_reported_as_not_retryable(pipeline):
+    # Telling the user to retry a 400 invites an identical failure at full cost.
+    import httpx
+    import anthropic
+
+    exc = anthropic.BadRequestError(
+        "container_id is required",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://x")),
+        body=None,
+    )
+    pipeline(research=exc)
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
+    assert '"retryable": false' in events["error"]
+
+
+def test_a_rate_limit_is_reported_as_retryable(pipeline):
+    import httpx
+    import anthropic
+
+    exc = anthropic.RateLimitError(
+        "slow down",
+        response=httpx.Response(429, request=httpx.Request("POST", "https://x")),
+        body=None,
+    )
+    pipeline(research=exc)
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
+    assert '"retryable": true' in events["error"]
+    assert "Rate limited" in events["error"]
+
+
+def test_a_missing_key_is_reported_as_not_retryable(pipeline):
+    from app.llm.anthropic_client import NoCredentials
+
+    pipeline(research=NoCredentials("ANTHROPIC_API_KEY is not set"))
+    events = dict(parse_sse(client.post("/api/chart/generate", json={"topic": "x"}).text))
+    assert "ANTHROPIC_API_KEY" in events["error"]
+    assert '"retryable": false' in events["error"]
