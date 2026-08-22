@@ -3,6 +3,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import type { ChartConfig, PlatformPreview } from './types'
 import { SAFE_ZONES, overlayVariantFor } from './types'
 import AnimatedChart from './components/AnimatedChart.vue'
+import AssistantWidget from './components/AssistantWidget.vue'
 import DataInput from './components/DataInput.vue'
 import PlatformOverlay from './components/PlatformOverlay.vue'
 
@@ -223,6 +224,12 @@ onUnmounted(() => {
 <template>
   <div class="app-layout">
     <DataInput @apply="onApply" />
+
+    <AssistantWidget
+      :aspect-ratio="config.aspectRatio"
+      :animation-duration="config.animationDuration"
+      @apply="onApply"
+    />
 
     <div class="chart-area">
       <div class="stage" :class="{ 'has-feed-chrome': feedChrome }">

@@ -166,9 +166,6 @@ PROPOSAL = {
     "subtitle": "Annual, USD",
     "xLabel": "Year",
     "yLabel": "Revenue (USD)",
-    "currency": "$",
-    "currencyPosition": "prefix",
-    "captions": [cap("Revenue triples", 4, 2)],
 }
 
 
@@ -196,9 +193,6 @@ def test_produces_a_renderer_shaped_config(stub):
     assert config["xAxisMode"] == "year"
     assert config["aspectRatio"] == "9:16"
     assert [s["name"] for s in config["series"]] == ["OpenAI"]
-    assert config["captions"] == [
-        {"text": "Revenue triples", "appearAt": 4, "duration": 2}
-    ]
 
 
 def test_the_tool_is_forced_so_the_model_cannot_answer_in_prose(stub):
@@ -208,25 +202,7 @@ def test_the_tool_is_forced_so_the_model_cannot_answer_in_prose(stub):
     assert stub.calls[0]["tools"][0]["strict"] is True
 
 
-def test_captions_are_sanitised_before_reaching_the_config(stub):
-    stub.install({**PROPOSAL, "captions": [cap("way late", 99, 2)]})
-    events = run(build_store(), animation_duration=8)
-    assert config_from(events)["captions"] == []
-    assert any(e["event"] == "notice" and "captions" in e["data"] for e in events)
 
-
-def test_a_currency_symbol_is_cleared_for_non_money_data(stub):
-    # "$1,789,226 deliveries" is simply wrong, and the model fills the field
-    # more readily than it leaves it empty.
-    stub.install(PROPOSAL)
-    events = run(build_store(unit="count"))
-    assert config_from(events)["currency"] == ""
-    assert any(e["event"] == "notice" and "currency" in e["data"] for e in events)
-
-
-def test_a_currency_symbol_survives_for_money_data(stub):
-    stub.install(PROPOSAL)
-    assert config_from(run(build_store()))["currency"] == "$"
 
 
 def test_the_language_selects_the_number_suffixes(stub):
@@ -251,15 +227,6 @@ def test_a_missing_tool_call_fails_loudly(stub):
     with pytest.raises(ComposeFailed, match="did not call build_chart"):
         run(build_store())
 
-
-def test_the_prompt_tells_the_model_where_periods_fall_in_time(stub):
-    # appearAt is seconds, not a year; without the mapping the model cannot
-    # anchor a caption to a moment in the animation.
-    stub.install(PROPOSAL)
-    run(build_store(), animation_duration=9)
-    prompt = stub.calls[0]["messages"][0]["content"]
-    assert "2023 -> 0.0s" in prompt
-    assert "2025 -> 9.0s" in prompt
 
 
 def test_the_system_prompt_is_cacheable(stub):
@@ -317,3 +284,62 @@ def test_the_config_matches_what_the_renderer_is_given_by_the_ui():
         f"only in the UI: {sorted(emitted - produced)}; "
         f"only in the backend: {sorted(produced - emitted)}"
     )
+
+
+# --- strict guarantees shape, not sanity ----------------------------------
+
+
+
+
+
+def test_text_fields_are_flattened_and_capped():
+    from app.pipeline.compose import clean_text
+
+    assert clean_text("Tesla  vs\nBYD", limit=120) == "Tesla vs BYD"
+    assert clean_text("x" * 500, limit=20) == "x" * 20
+
+
+
+
+# --- empty-caption retry ---------------------------------------------------
+
+
+
+
+
+
+
+# --- currency is derived, not asked for -----------------------------------
+
+
+def test_currency_is_not_part_of_the_tool_surface():
+    # Asking for it meant asking the model to emit an empty string for a
+    # required field whenever the data was counts; it repeatedly returned a
+    # stray markup fragment instead. The canvas only accepts USD_* money units,
+    # so the symbol is knowable without asking.
+    from app.pipeline.compose import BUILD_CHART_TOOL
+
+    properties = BUILD_CHART_TOOL["input_schema"]["properties"]
+    assert set(properties) == {"title", "subtitle", "xLabel", "yLabel"}
+
+
+def test_money_data_gets_a_symbol(stub):
+    stub.install(PROPOSAL)
+    assert config_from(run(build_store()))["currency"] == "$"
+
+
+def test_count_data_gets_no_symbol(stub):
+    stub.install(PROPOSAL)
+    assert config_from(run(build_store(unit="count")))["currency"] == ""
+
+
+def test_the_model_supplies_no_captions(stub):
+    stub.install(PROPOSAL)
+    assert config_from(run(build_store()))["captions"] == []
+
+
+def test_model_strings_are_flattened_and_capped(stub):
+    stub.install({**PROPOSAL, "title": "Tesla  vs\nBYD", "subtitle": "x" * 400})
+    config = config_from(run(build_store()))
+    assert config["title"] == "Tesla vs BYD"
+    assert len(config["subtitle"]) == 160

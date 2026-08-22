@@ -4,13 +4,18 @@ A separate call from Stage 1 by necessity: `output_config.format` returns a 400
 when citations are enabled, so the researching turn and the schema-guaranteed
 turn cannot be the same request.
 
-Everything the model returns is treated as a proposal. Captions are clamped,
-currency is corrected against the data's actual dimension, and every other
-`ChartConfig` field is filled server-side.
+The model writes language only — title, subtitle, axis labels. Everything else
+on the `ChartConfig` is filled server-side, and every string it returns is
+scrubbed before use.
+
+Captions are **not** requested from the model at present. `pipeline/captions.py`
+still holds the sanitiser for when they are re-enabled; users can add captions
+by hand in the UI meanwhile.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterator
 
 from ..canvas.store import CanvasStore
@@ -23,67 +28,54 @@ from ..schemas import (
     ChartConfig,
     NumberSuffixes,
 )
-from .captions import sanitize_captions
 
-# `strict` guarantees the arguments validate exactly, so no defensive parsing of
-# the tool input is needed. It requires additionalProperties:false and required
-# on every object (§11).
+# `strict` guarantees the arguments validate against the schema. It does not
+# guarantee the *contents* of a string — see clean_text below.
+#
+# The surface is deliberately small. An earlier version also asked for
+# `currency`, which meant asking the model to emit an empty string for a
+# required field whenever the data was counts; it repeatedly returned a stray
+# markup fragment instead. The canvas only accepts USD_* money units, so the
+# symbol is knowable without asking.
 BUILD_CHART_TOOL: dict[str, Any] = {
     "name": "build_chart",
-    "description": (
-        "Produce the final chart presentation. Call exactly once. Captions must "
-        "be spaced across the animation and must not overlap."
-    ),
+    "description": "Write the chart's title, subtitle and axis labels. Call exactly once.",
     "strict": True,
     "input_schema": {
         "type": "object",
         "properties": {
             "title": {"type": "string", "description": "Short, concrete headline."},
-            "subtitle": {"type": "string", "description": "Unit, span, or source qualifier."},
-            "xLabel": {"type": "string"},
-            "yLabel": {"type": "string", "description": "Must state the unit."},
-            "currency": {
+            "subtitle": {
                 "type": "string",
-                "description": "Symbol for money values, or an empty string for counts.",
+                "description": "Unit, span, or source qualifier.",
             },
-            "currencyPosition": {"type": "string", "enum": ["prefix", "suffix"]},
-            "captions": {
-                "type": "array",
-                "description": "Two to four typically; zero is valid.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "appearAt": {
-                            "type": "number",
-                            "description": "Seconds from the start of the animation.",
-                        },
-                        "duration": {
-                            "type": "number",
-                            "description": "Seconds on screen.",
-                        },
-                    },
-                    "required": ["text", "appearAt", "duration"],
-                    "additionalProperties": False,
-                },
-            },
+            "xLabel": {"type": "string", "description": "X axis label."},
+            "yLabel": {"type": "string", "description": "Y axis label. Must state the unit."},
         },
-        "required": [
-            "title",
-            "subtitle",
-            "xLabel",
-            "yLabel",
-            "currency",
-            "currencyPosition",
-            "captions",
-        ],
+        "required": ["title", "subtitle", "xLabel", "yLabel"],
         "additionalProperties": False,
     },
 }
 
+# Extend if canvas.derive.UNITS ever carries a non-USD money unit.
+_SYMBOL_FOR_DIMENSION = {"currency": "$"}
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
 
 class ComposeFailed(RuntimeError):
     pass
+
+
+def clean_text(value: object, *, limit: int) -> str:
+    """Flatten and cap a model-supplied string.
+
+    `strict: true` guarantees the argument *shape*, not that a string is sane —
+    a live run returned a field containing a stray markup fragment, and these
+    strings are drawn straight onto the chart.
+    """
+    text = _CONTROL.sub(" ", str(value or ""))
+    return re.sub(r"\s+", " ", text).strip()[:limit]
 
 
 def suffixes_for(language: str) -> NumberSuffixes:
@@ -135,7 +127,6 @@ def run_compose(
                     topic=topic,
                     language=language,
                     series=series,
-                    animation_duration=animation_duration,
                     dimension=dimension,
                     axis_mode=axis_mode,
                     research_summary=research_summary,
@@ -152,7 +143,7 @@ def run_compose(
         ],
         tools=[BUILD_CHART_TOOL],
         tool_choice={"type": "tool", "name": "build_chart"},
-        max_tokens=4000,
+        max_tokens=2000,
     )
 
     proposal = _tool_input(response)
@@ -161,50 +152,27 @@ def run_compose(
             f"the model did not call build_chart (stop_reason={response.stop_reason})"
         )
 
-    captions, notes = sanitize_captions(
-        proposal.get("captions"), animation_duration=animation_duration
-    )
-    if notes:
-        yield {"event": "notice", "data": {"captions": notes}}
-
-    # A currency symbol against a delivery count is simply wrong, and the model
-    # is more willing to fill the field than to leave it empty.
-    currency = str(proposal.get("currency") or "")
-    if dimension != "currency" and currency:
-        currency = ""
-        yield {
-            "event": "notice",
-            "data": {"currency": f"cleared: values are {dimension}, not money"},
-        }
-
     config = ChartConfig(
         series=series,
         aspect_ratio=aspect_ratio,
         x_axis_mode=axis_mode,  # type: ignore[arg-type]
-        title=str(proposal.get("title") or "").strip(),
-        subtitle=str(proposal.get("subtitle") or "").strip(),
-        x_label=str(proposal.get("xLabel") or "").strip(),
-        y_label=str(proposal.get("yLabel") or "").strip(),
-        currency=currency,
-        currency_position=proposal.get("currencyPosition") or "prefix",  # type: ignore[arg-type]
+        title=clean_text(proposal.get("title"), limit=120),
+        subtitle=clean_text(proposal.get("subtitle"), limit=160),
+        x_label=clean_text(proposal.get("xLabel"), limit=60),
+        y_label=clean_text(proposal.get("yLabel"), limit=60),
+        # Derived, not asked for: a "$" against a delivery count is simply wrong.
+        currency=_SYMBOL_FOR_DIMENSION.get(dimension, ""),
+        currency_position="prefix",
         # Only true if the data actually goes negative; the renderer draws a
         # zero line when it is set.
         allow_negative=any(p.value < 0 for s in series for p in s.data),
         animation_duration=animation_duration,
         number_suffixes=suffixes_for(language),
-        captions=captions,
+        captions=[],
     )
 
-    yield {
-        "event": "config",
-        "data": {"config": config.model_dump(by_alias=True)},
-    }
+    yield {"event": "config", "data": {"config": config.model_dump(by_alias=True)}}
     yield {
         "event": "stage",
-        "data": {
-            "name": "compose",
-            "status": "done",
-            "captions": len(captions),
-            "series": len(series),
-        },
+        "data": {"name": "compose", "status": "done", "series": len(series)},
     }

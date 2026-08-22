@@ -337,6 +337,26 @@ and the request — the model does not choose them.
 **Language** governs title, subtitle, labels, and captions. Pair it with `numberSuffixes`
 — Indonesian output should use the `Indonesian` preset (`Rb`/`Jt`/`M`), not `K`/`M`/`B`.
 
+### 4.6 What the model is *not* asked for
+
+The compose tool surface is deliberately four fields — title, subtitle, xLabel,
+yLabel. Two things were removed after live runs:
+
+- **`currency`.** Asking for it meant asking the model to emit an *empty string
+  for a required field* whenever the data was counts. It repeatedly returned a
+  stray markup fragment instead, which the renderer would have drawn verbatim
+  against every value. The canvas only accepts `USD_*` money units, so the
+  symbol is knowable without asking — it is derived from the dimension.
+- **`captions`.** Disabled for now by product decision. Generation was also
+  unreliable: two canvases differing by a single value produced two captions and
+  none, with identical prompts. `pipeline/captions.py` keeps the clamping,
+  trimming and overlap rules with their tests for when this is re-enabled; users
+  can add captions by hand in the existing UI meanwhile.
+
+Both removals point the same way: `strict: true` guarantees the argument
+*shape*, never the sanity of a string, so every model-supplied string is still
+scrubbed and length-capped before it reaches the renderer.
+
 ---
 
 ## 5. HTTP contract
@@ -445,7 +465,8 @@ normalised correctly, zero fabricated URLs.
 
 ### Phase 4 — Stage 3 compose ✅ **done** — verified on a live canvas
 - [x] `build_chart` strict tool, forced via `tool_choice`
-- [x] Server-side caption clamping, trimming and overlap rejection
+- [x] **Captions are not requested from the model** — see §4.6
+- [x] `pipeline/captions.py` retained (sanitiser + tests) for re-enabling
 - [x] Language-aware `numberSuffixes` selection
 - [x] Finalisation: canvas → `Series[]`
 - [x] Currency cleared when the data is not money
@@ -455,10 +476,20 @@ normalised correctly, zero fabricated URLs.
 - [x] Config key set pinned against `DataInput.vue` by test
 
 ### Phase 5 — Widget ✅ acceptance: end-to-end topic → animated chart
-- [ ] `AssistantWidget.vue` + SSE client
-- [ ] Live canvas summary + sources list
-- [ ] Wire `Apply` into `onApply`
-- [ ] Error and empty states
+- [x] `lib/agentClient.ts` — SSE over `fetch`, framed by hand
+- [x] `AssistantWidget.vue` — floating panel, bottom-right
+- [x] Live canvas summary driven by the gap report + deduped sources list
+- [x] `Apply` emits into the existing `onApply`; the renderer is unchanged
+- [x] Error, running and empty states
+
+`EventSource` is GET-only and the endpoint is a POST, so the stream is read from
+the `fetch` body and SSE frames are assembled by hand — a frame can arrive split
+across chunks, so only complete ones are consumed.
+
+The progress line is driven by the **gap report**, not the row count: "6 still
+missing" is honest where "0 datapoints" alone would look like nothing is
+happening and a filled row count would look complete while a whole series is
+absent.
 
 ### Phase 6 — Hardening
 - [ ] Per-run token budget + timeout
